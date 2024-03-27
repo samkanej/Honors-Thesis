@@ -8,3 +8,12 @@ For those interested in some "light" reading on ANSAs and/or the particularities
 
 ## Abstract
 This thesis seeks to ascertain the apolitical crisis conditions under which armed non-state actors (ANSAs) accrue power. Existing literature examines the structures that nurture ANSA power, including territorial control, group legitimacy, and access to resources. A monopoly on the use of force enables groups to sustain these structures. I explore whether ANSAs instrumentalize moments of apolitical national crisis to nurture these pillars of power and expect that groups will decrease their reliance on the use of force, instead utilizing catastrophes as opportunities to bolster legitimacy among local populations. Statistical, spatial, and qualitative analyses buttress this pursuit. In short, this research suggests that groups do try to accrue power in times of crisis, though not through service provision. Instead, they rely on force initially, and with an interaction effect between the temporal and spatial variation of their use of force – a curious finding that necessitates further investigation. As well, inter-group competition does not increase; groups instead seek to build alliances when threatened. Lastly, some groups rely on performativity sometimes – namely, politically motivated ANSAs use symbolic appeals. The duration and expansiveness of a disaster might also affect which groups make these appeals.
+
+## Dataset bibliography
+I sourced data from Uppsala Conflict Data Program's Georeferenced Event Dataset, the World Bank's Data Bank, the Emergency Events Database, and Harvard Business School's Global Crises Data to create my own 41-variable dataset for analysis. Here are the applicable sources:
+* Sundberg, Ralph, and Erik Melander. “Introducing the UCDP Georeferenced Event Dataset.” Journal of Peace Research 50, no. 4 (2013).
+* World Bank, World Development Indicators (2020).
+* Global Crises Data, Harvard Business School (2020).
+* International Disaster Database, Centre for Research on the Epidemiology of Disasters (2020).
+
+## License
