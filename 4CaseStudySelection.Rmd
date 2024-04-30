@@ -1,0 +1,167 @@
+---
+title: "4. Case study selection"
+author: "Sam Kane Jiménez"
+output: html_document
+---
+
+```{r, setup}
+knitr::opts_chunk$set(echo=FALSE,
+                      warning=FALSE,
+                      message=FALSE,
+                      out.width='40%',
+                      fig.dim=c(6,4))
+```
+
+# Case study selection and plots
+
+For this project's qualitative component, I randomly selected three cases to analyze, stratified by geographic region. This section covers the selection process as well as the plots and figures I created to support the discussion of each case study.
+
+*Note:* Before kicking off, I've made sure to set my working directory to the folder where this Rmd file and the datasets I will be using are all saved. I then load in the R packages that I will need throughout the entire research process. I also load in the datasets created in the previous section:
+
+*Note:* Before kicking off, I've made sure to set my working directory to the folder where this Rmd file and the datasets I will be using are all saved. I then load in the R packages that I will need throughout the entire research process. I also load in the datasets created in the previous section:
+
+```{r}
+library(descr)
+library(car)
+library(carData)
+library(stats)
+library(MASS)
+library(readxl)
+library(tidyverse)
+library(tidyr)
+library(knitr)
+library(ggplot2)
+library(dplyr)
+library(margins)
+library(AER)
+library(effects)
+library(nnet)
+library(nlme)
+library(lme4)
+library(sjlabelled)
+library(eyelinker)
+library(survey)
+library(codebook)
+library(ordinal)
+library(sjstats)
+library(Matrix)
+library(boot)
+library(visreg)
+library(stringr)
+library(lubridate)
+library(reshape2)
+library(stargazer)
+library(wesanderson)
+
+emdat <- readRDS("emdat.rds")
+thesisCYG <- readRDS("thesisCYG.rds")
+
+```
+
+## Case selection
+
+To select my qualitative cases to study, I subset *emdat* to natural disaster cases that affected more than 30,000 people and that occurred after 1988. I grouped the dataset's regional subsets into my own regions of interest - Africa, America, Asia, and the Middle East and Northern Africa - and dropped the remaining categories.
+
+```{r}
+emdatopts <- subset(emdat, emdat$TotalAffected >= 30000)
+emdatopts$Year <- as.numeric(emdatopts$year)
+emdatopts <- subset(emdatopts, emdatopts$Year > 1988)
+```
+
+At the time, I used an online random number generator to select the corresponding case in each regional subset, using the following code:
+
+```{r}
+# asia <- subset(emdatopts, emdatopts$Region == "Central Asia" | emdatopts$Region == "Melanesia" | emdatopts$Region == "Southern Asia" | emdatopts$Region == "South-Eastern Asia")
+# africa <- subset(emdatopts, emdatopts$Region == "Southern Africa" | emdatopts$Region == "Western Africa" | emdatopts$Region == "Middle Africa" | emdatopts$Region == "Eastern Africa")
+# america <- subset(emdatopts, emdatopts$Region == "South America" | emdatopts$Region == "Northern America" | emdatopts$Region == "Central America")
+# mena <- subset(emdatopts, emdatopts$Region == "Western Asia" | emdatopts$Region == "Northern Africa")
+```
+
+Upon reviewing this document, I realized I could employ R to conduct a stratified random sampling of the data as follows:
+
+```{r}
+#Recategorize the regions per my preferences
+emdatopts$Region[emdatopts$Region == "Central Asia" | emdatopts$Region == "Melanesia" | emdatopts$Region == "Southern Asia" | emdatopts$Region == "South-Eastern Asia" | emdatopts$Region == "Eastern Asia"] <- "Asia"
+
+emdatopts$Region[emdatopts$Region == "Southern Africa" | emdatopts$Region == "Western Africa" | emdatopts$Region == "Middle Africa" | emdatopts$Region == "Eastern Africa"] <- "Africa"
+
+emdatopts$Region[emdatopts$Region == "South America" | emdatopts$Region == "Northern America" | emdatopts$Region == "Central America" | emdatopts$Region == "Caribbean"] <- "America"
+
+emdatopts$Region[emdatopts$Region == "Western Asia" | emdatopts$Region == "Northern Africa"] <- "MENA"
+
+#drop other regions
+emdatopts2 <- emdatopts %>% 
+  subset(Region %in% c("Asia", "Africa", "America", "MENA"))
+
+#randomly select one case from each regional category
+casestudies <- emdatopts %>%
+  group_by(Region) %>%
+  sample_n(size=1)
+
+#randomly select 3 case studies from the 4, owing to my time constraints for research and writing
+casestudies2 <- casestudies[sample(nrow(casestudies), size=3), ]
+```
+
+Regardless of the selection method, there was some trial and error, as I had to corroborate that the selected cases overlapped with places where ANSAs were active at the time.
+
+After selecting my cases, I created plots to illustrate ANSA violence levels before and after each disaster.
+
+For each case study, I subset cases in *thesisCYG* to only include those involving the pertinent ANSA and its country of operations to then make an attack frequency chart with time (start dates) on the X axis and casualties on the Y axis:
+
+## Gulf Cartel and Huracán Alex, Mexico 2010
+
+```{r}
+gulf <- subset(thesisCYG, str_detect(thesisCYG$cyg, "Gulf Cartel"))
+gulf$year <- as.factor(gulf$year)
+
+breakV <- seq(2004,2019,by=2) #start and end years for the chart, counted by 2s
+gulf2 <- gulf %>% 
+  dplyr::select(year, deaths_a, deaths_b, cyg_civ, deaths_unknown) #select pertinent variables for plot
+gulf2$cyg <- NULL
+meltdf2 <- melt(gulf2,id="year")
+
+#create plot
+ggplot(meltdf2,aes(fill=variable, x=year,y=value,group=variable)) + geom_bar(stat = "identity", position = "stack") +  scale_fill_manual(name = "Group", labels = c("Civilians", "Government Forces", "Gulf Cartel Forces", "Unknown"), values = (wes_palette("GrandBudapest1"))) + scale_x_discrete(name ="Year", breaks = breakV) + scale_y_continuous(name ="Number of Fatalities") + theme(title = element_text(size=9), axis.text.x = element_text(size=6), axis.text.y = element_text(size=6), axis.title.x = element_text(size=7), axis.title.y = element_text(size=7), legend.title = element_text(size = 7), legend.key.size = unit(.5,"line"), legend.text = element_text(size=6), legend.position = "bottom") + labs(y = "Number of Deaths", title = "Deaths by Group in Gulf Cartel-Related Attacks, 2004-2019") + annotate("rect", xmin=7, xmax=7.5, ymin=-Inf, ymax=Inf, alpha=0.2, fill="red")
+```
+
+## PKK and the Van Earthquake, Turkey 1998
+
+```{r}
+#make an attack frequency chart with time (start dates) on the X axis and casualties on the Y axis
+#subset to only cases including "PKK" in dyad_name
+pkk <- subset(thesisCYG, str_detect(thesisCYG$cyg, "PKK"))
+pkk$year <- as.factor(pkk$year)
+
+breakV <- seq(1989,2019,by=4) #window of years to show on chart, separated by 4s
+pkk2 <- pkk %>% 
+  dplyr::select(year, deaths_a, deaths_b, cyg_civ, deaths_unknown) #select pertinent variables
+pkk2$cyg <- NULL
+meltdf2 <- melt(pkk2,id="year")
+
+#create plot
+ggplot(meltdf2,aes(fill=variable, x=year,y=value,group=variable)) + geom_bar(stat = "identity", position = "stack") +  scale_fill_manual(name = "Group", labels = c("Civilians", "Government Forces", "PKK Forces", "Unknown"), values = (wes_palette("GrandBudapest1"))) + scale_x_discrete(name ="Year", breaks = breakV) + scale_y_continuous(name ="Number of Fatalities") + theme(title = element_text(size=9), axis.text.x = element_text(size=6), axis.text.y = element_text(size=6), axis.title.x = element_text(size=7), axis.title.y = element_text(size=7), legend.title = element_text(size = 7), legend.key.size = unit(.5,"line"), legend.text = element_text(size=6), legend.position = "bottom") + labs(y = "Number of Deaths", title = "Deaths by Group in PKK-Related Attacks, 1989-2019") + annotate("rect", xmin=23, xmax=23.5, ymin=-Inf, ymax=Inf, alpha=0.2, fill="red")
+```
+
+## ONLF and the drought, Ethiopia 2009
+
+```{r}
+onlf <- subset(thesisCYG, perpetrator=="ONLF" & country=="Ethiopia") #subset to ANSA attack information relevant to case study
+onlf <- onlf %>% ungroup() %>% add_row(tibble_row(year=1997, active_year=0))
+onlf$year <- as.factor(onlf$year)
+
+onlf$deaths_a[onlf$ISOyear == "ETH 2003" & onlf$type_of_violence==3] <- 0
+onlf$cyg_civ[onlf$ISOyear == "ETH 2003" & onlf$type_of_violence==3] <- 2 
+onlf$deaths_b[onlf$ISOyear == "ETH 2003" & onlf$type_of_violence==3] <- 0
+onlf$deaths_a[onlf$ISOyear == "ETH 2007" & onlf$type_of_violence==3] <- 0
+onlf$cyg_civ[onlf$ISOyear == "ETH 2007" & onlf$type_of_violence==3] <- 82 
+onlf$deaths_b[onlf$ISOyear == "ETH 2007" & onlf$type_of_violence==3] <- 0
+
+breakV <- seq(1988,2018,by=2) #window of years to show on chart, separated by 2s
+onlf2 <- onlf %>% 
+  dplyr::select(year, deaths_a, deaths_b, cyg_civ, deaths_unknown) #keep pertinent variables
+onlf2$cyg <- NULL
+meltdf2 <- melt(onlf2,id="year")
+
+#create plot
+ggplot(meltdf2,aes(fill=variable, x=year,y=value,group=variable)) + geom_bar(stat = "identity", position = "stack") +  scale_fill_manual(name = "Group", labels = c("Civilians", "Government Forces", "ONLF Forces", "Unknown"), values = (wes_palette("GrandBudapest1"))) + scale_x_discrete(name ="Year", breaks = breakV) + scale_y_continuous(name ="Number of Fatalities") + theme(title = element_text(size=9), axis.text.x = element_text(size=6), axis.text.y = element_text(size=6), axis.title.x = element_text(size=7), axis.title.y = element_text(size=7), legend.title = element_text(size = 7), legend.key.size = unit(.5,"line"), legend.text = element_text(size=6), legend.position = "bottom") + labs(y = "Number of Deaths", title = "Deaths by Group in ONLF-Related Attacks, 1994-2018") + annotate("rect", xmin=14.3, xmax=18.6, ymin=-Inf, ymax=Inf, alpha=0.2, fill="red")
+```

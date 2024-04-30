@@ -1,0 +1,753 @@
+---
+title: "3. Spatial analysis models"
+author: "Sam Kane Jiménez"
+output: html_document
+---
+
+```{r, setup}
+knitr::opts_chunk$set(echo=FALSE,
+                      warning=FALSE,
+                      message=FALSE,
+                      out.width='40%',
+                      fig.dim=c(6,4))
+```
+
+# Spatial analysis models
+
+The spatial analysis models use *emdat3*, the dataframe that I created early in this document and that has since been on standby, as well as *ansa3*. I run these dataframes' offshoots in ArcGIS pro, and then feed those results back into R by following the subsequent steps.
+
+*Note:* If you're following along and do not have access to a GIS platform, you can skip to the section 'Append datasets by distance threshold' and load in my GIS output CSVs, which are in the project folder.
+
+*Note:* Before kicking off, I've made sure to set my working directory to the folder where this Rmd file and the datasets I will be using are all saved. I then load in the R packages that I will need throughout the entire research process. I also load in the datasets created in the previous section:
+
+```{r}
+library(descr)
+library(car)
+library(carData)
+library(stats)
+library(MASS)
+library(readxl)
+library(tidyverse)
+library(tidyr)
+library(knitr)
+library(ggplot2)
+library(dplyr)
+library(margins)
+library(AER)
+library(effects)
+library(nnet)
+library(nlme)
+library(lme4)
+library(sjlabelled)
+library(eyelinker)
+library(survey)
+library(codebook)
+library(ordinal)
+library(sjstats)
+library(Matrix)
+library(boot)
+library(visreg)
+library(stringr)
+library(lubridate)
+library(reshape2)
+library(stargazer)
+library(wesanderson)
+
+emdat3 <- readRDS("emdat3.rds")
+
+```
+
+## Subsetting natural disasters by year
+
+I first subset natural disasters by year, producing a total of 30 CSV files of natural disasters occurring in a given year.
+
+To obtain the 30 CSV files, I start by creating a dataset of pertinent *emdat* data:
+
+```{r}
+#Create dataset
+emdatloc <- emdat3[!is.na(emdat3["lat"]), ] #subset emdat3 to just the cases that contain geocoordinates
+locdrop <- c("OFDA Response", "Appeal", "Declaration", "Aid Contribution","Latitude", "Longitude", "Reconstruction Costs ('000 US$)", "Insured Damages ('000 US$)", "Total Damages ('000 US$)", "CPI") #list of variables to drop
+emdatloc2 <-  emdatloc[ ,!(names(emdatloc) %in% locdrop)] #drop unnecessary variables
+emdatloc2$lat <- as.numeric(emdatloc2$lat) #store lat values as numeric
+emdatloc2$long <- as.numeric(emdatloc2$long) #store long values as numeric
+```
+
+Now, I create two offshoot datasets:
+
+1)  *emdatloc3* is a subset of the dataset we just created, delimited to just the cases between 1989 and 2020 and viable latitude and longitude values. I will join this dataframe to the post-GIS outputs by event ID, but for now I will just make sure to save it:
+
+```{r}
+emdatloc3 <- emdatloc2 %>% 
+  filter(year >= 1989, year <= 2020, lat < 90, lat > -90, long > -180, long < 180) #join this df to post-GIS outputs by event ID
+# saveRDS(emdatloc3, "emdatloc3.rds")
+```
+
+2)  *emdatloc4* is a subset of *emdatloc3* that keeps just the pertinent variables that need to go into ArcGIS Pro. It's a leaner *emdatloc3* that will help speed up processing times.
+
+```{r}
+emdatloc4 <- subset(emdatloc3, select=(c("event_id", "lat", "long", "year")))
+# saveRDS(emdatloc4, "emdatloc4.rds")
+```
+
+Now, I make simple annual subsets of *emdatloc4* to feed into ArcGIS Pro:
+
+```{r}
+nd1989 <- subset (emdatloc4, year == 1989)
+# write.csv(nd1989, "nd1989.csv")
+nd1990 <- subset (emdatloc4, year == 1990)
+# write.csv(nd1990, "nd1990.csv")
+nd1991 <- subset (emdatloc4, year == 1991)
+# write.csv(nd1991, "nd1991.csv")
+nd1992 <- subset (emdatloc4, year == 1992)
+# write.csv(nd1992, "nd1992.csv")
+nd1993 <- subset (emdatloc4, year == 1993)
+# write.csv(nd1993, "nd1993.csv")
+nd1994 <- subset (emdatloc4, year == 1994)
+# write.csv(nd1994, "nd1994.csv")
+nd1995 <- subset (emdatloc4, year == 1995)
+# write.csv(nd1995, "nd1995.csv")
+nd1996 <- subset (emdatloc4, year == 1996)
+# write.csv(nd1996, "nd1996.csv")
+nd1997 <- subset (emdatloc4, year == 1997)
+# write.csv(nd1997, "nd1997.csv")
+nd1998 <- subset (emdatloc4, year == 1998)
+# write.csv(nd1998, "nd1998.csv")
+nd1999 <- subset (emdatloc4, year == 1999)
+# write.csv(nd1999, "nd1999.csv")
+nd2000 <- subset (emdatloc4, year == 2000)
+# write.csv(nd2000, "nd2000.csv")
+nd2001 <- subset (emdatloc4, year == 2001)
+# write.csv(nd2001, "nd2001.csv")
+nd2002 <- subset (emdatloc4, year == 2002)
+# write.csv(nd2002, "nd2002.csv")
+nd2003 <- subset (emdatloc4, year == 2003)
+# write.csv(nd2003, "nd2003.csv")
+nd2004 <- subset (emdatloc4, year == 2004)
+# write.csv(nd2004, "nd2004.csv")
+nd2005 <- subset (emdatloc4, year == 2005)
+# write.csv(nd2005, "nd2005.csv")
+nd2006 <- subset (emdatloc4, year == 2006)
+# write.csv(nd2006, "nd2006.csv")
+nd2007 <- subset (emdatloc4, year == 2007)
+# write.csv(nd2007, "nd2007.csv")
+nd2008 <- subset (emdatloc4, year == 2008)
+# write.csv(nd2008, "nd2008.csv")
+nd2009 <- subset (emdatloc4, year == 2009)
+# write.csv(nd2009, "nd2009.csv")
+nd2010 <- subset (emdatloc4, year == 2010)
+# write.csv(nd2010, "nd2010.csv")
+nd2011 <- subset (emdatloc4, year == 2011)
+# write.csv(nd2011, "nd2011.csv")
+nd2012 <- subset (emdatloc4, year == 2012)
+# write.csv(nd2012, "nd2012.csv")
+nd2013 <- subset (emdatloc4, year == 2013)
+# write.csv(nd2013, "nd2013.csv")
+nd2014 <- subset (emdatloc4, year == 2014)
+# write.csv(nd2014, "nd2014.csv")
+nd2015 <- subset (emdatloc4, year == 2015)
+# write.csv(nd2015, "nd2015.csv")
+nd2016 <- subset (emdatloc4, year == 2016)
+# write.csv(nd2016, "nd2016.csv")
+nd2017 <- subset (emdatloc4, year == 2017)
+# write.csv(nd2017, "nd2017.csv")
+nd2018 <- subset (emdatloc4, year == 2018)
+# write.csv(nd2018, "nd2018.csv")
+nd2019 <- subset (emdatloc4, year == 2019)
+# write.csv(nd2019, "nd2019.csv")
+
+rm(list=(ls()[ls()!="thesis" & ls()!="codebook" & ls()!="ansa3" & ls()!="emdatloc3" & ls()!="emdatloc4" & ls()!="emdat3" & ls()!="emdat"])) #keep the environment as clean as possible
+```
+
+Now that each year's natural disaster CSV is complete, I subset *ansa3* to a bare-bones dataset, containing just the variables that I will feed into ArcGIS Pro. The subset's primary purpose is to reduce processing time.
+
+```{r}
+#subset attacks dataset to minimalist version, join other variables later (after GIS processes)
+ansa4 <- subset(ansa3, select=(c("attack_id", "latitude", "longitude", "year"))) #left join ANSA 3 by "attack_id" after spatial joins
+# saveRDS(ansa4, "ansa4.rds") #save the output
+```
+
+## GIS processes
+
+Although there several GIS platforms could support the intended analysis set out here, I describe the steps I take on ArcGIS Pro, which, which might differ slightly from other platforms.
+
+First, I load the annual subset CSV files and *ansa4* into the GIS program and convert tables to points. Then, I create spatial joins of all ANSA attack points within 100 and 1,000 geodesic kilometers of each natural disaster per year. Each observation will constitute a natural disaster and an ANSA attack that occurred within the distance threshold from that disaster. Lastly, I expert the spatial joins as CSVs, resulting in one file per year per distance threshold.
+
+## Append datasets by distance threshold
+
+Back on R, I Read in the CSV files generated from ArcGIS geoprocesses and then append km dataframes to create a singular table with all years' data for each distance threshold.
+
+*Note:* I originally had four distance thresholds, though I ultimately only used the smallest (100 km) and largest (1,000 km) in the research I presented. The code here and the project folder consider all four original distance thresholds.
+
+```{r}
+##100 km
+nd1989_100 <- read.csv("1989_100km.csv")
+nd1990_100 <- read.csv("1990_100km.csv")
+nd1991_100 <- read.csv("1991_100km.csv")
+nd1992_100 <- read.csv("1992_100km.csv")
+nd1993_100 <- read.csv("1993_100km.csv")
+nd1994_100 <- read.csv("1994_100km.csv")
+nd1995_100 <- read.csv("1995_100km.csv")
+nd1996_100 <- read.csv("1996_100km.csv")
+nd1997_100 <- read.csv("1997_100km.csv")
+nd1998_100 <- read.csv("1998_100km.csv")
+nd1999_100 <- read.csv("1999_100km.csv")
+nd2000_100 <- read.csv("2000_100km.csv")
+nd2001_100 <- read.csv("2001_100km.csv")
+nd2002_100 <- read.csv("2002_100km.csv")
+nd2003_100 <- read.csv("2003_100km.csv")
+nd2004_100 <- read.csv("2004_100km.csv")
+nd2005_100 <- read.csv("2005_100km.csv")
+nd2006_100 <- read.csv("2006_100km.csv")
+nd2007_100 <- read.csv("2007_100km.csv")
+nd2008_100 <- read.csv("2008_100km.csv")
+nd2009_100 <- read.csv("2009_100km.csv")
+nd2010_100 <- read.csv("2010_100km.csv")
+nd2011_100 <- read.csv("2011_100km.csv")
+nd2012_100 <- read.csv("2012_100km.csv")
+nd2013_100 <- read.csv("2013_100km.csv")
+nd2014_100 <- read.csv("2014_100km.csv")
+nd2015_100 <- read.csv("2015_100km.csv")
+nd2016_100 <- read.csv("2016_100km.csv")
+nd2017_100 <- read.csv("2017_100km.csv")
+nd2018_100 <- read.csv("2018_100km.csv")
+nd2019_100 <- read.csv("2019_100km.csv")
+
+km100 <- rbind(nd1989_100, nd1990_100, nd1991_100, nd1992_100, nd1993_100, nd1994_100, nd1995_100, nd1996_100, nd1997_100, nd1998_100, nd1999_100, nd2000_100, nd2001_100, nd2002_100, nd2003_100, nd2004_100, nd2005_100, nd2006_100, nd2007_100, nd2008_100, nd2009_100, nd2010_100, nd2011_100, nd2012_100, nd2013_100, nd2014_100, nd2015_100, nd2016_100, nd2017_100, nd2018_100, nd2019_100) #bind together all 100km datasets
+saveRDS(km100, "km100raw.rds") #save the 100km dataset
+
+# ##250 km
+# nd1989_250 <- read.csv("1989_250km.csv")
+# nd1990_250 <- read.csv("1990_250km.csv")
+# nd1991_250 <- read.csv("1991_250km.csv")
+# nd1992_250 <- read.csv("1992_250km.csv")
+# nd1993_250 <- read.csv("1993_250km.csv")
+# nd1994_250 <- read.csv("1994_250km.csv")
+# nd1995_250 <- read.csv("1995_250km.csv")
+# nd1996_250 <- read.csv("1996_250km.csv")
+# nd1997_250 <- read.csv("1997_250km.csv")
+# nd1998_250 <- read.csv("1998_250km.csv")
+# nd1999_250 <- read.csv("1999_250km.csv")
+# nd2000_250 <- read.csv("2000_250km.csv")
+# nd2001_250 <- read.csv("2001_250km.csv")
+# nd2002_250 <- read.csv("2002_250km.csv")
+# nd2003_250 <- read.csv("2003_250km.csv")
+# nd2004_250 <- read.csv("2004_250km.csv")
+# nd2005_250 <- read.csv("2005_250km.csv")
+# nd2006_250 <- read.csv("2006_250km.csv")
+# nd2007_250 <- read.csv("2007_250km.csv")
+# nd2008_250 <- read.csv("2008_250km.csv")
+# nd2009_250 <- read.csv("2009_250km.csv")
+# nd2010_250 <- read.csv("2010_250km.csv")
+# nd2011_250 <- read.csv("2011_250km.csv")
+# nd2012_250 <- read.csv("2012_250km.csv")
+# nd2013_250 <- read.csv("2013_250km.csv")
+# nd2014_250 <- read.csv("2014_250km.csv")
+# nd2015_250 <- read.csv("2015_250km.csv")
+# nd2016_250 <- read.csv("2016_250km.csv")
+# nd2017_250 <- read.csv("2017_250km.csv")
+# nd2018_250 <- read.csv("2018_250km.csv")
+# nd2019_250 <- read.csv("2019_250km.csv")
+# 
+# km250 <- rbind(nd1989_250, nd1990_250, nd1991_250, nd1992_250, nd1993_250, nd1994_250, nd1995_250, nd1996_250, nd1997_250, nd1998_250, nd1999_250, nd2000_250, nd2001_250, nd2002_250, nd2003_250, nd2004_250, nd2005_250, nd2006_250, nd2007_250, nd2008_250, nd2009_250, nd2010_250, nd2011_250, nd2012_250, nd2013_250, nd2014_250, nd2015_250, nd2016_250, nd2017_250, nd2018_250, nd2019_250) #bind together all 250km datasets
+# saveRDS(km250, "km250raw.rds") #save the 250km dataset
+# 
+# ##500 km
+# nd1989_500 <- read.csv("1989_500km.csv")
+# nd1990_500 <- read.csv("1990_500km.csv")
+# nd1991_500 <- read.csv("1991_500km.csv")
+# nd1992_500 <- read.csv("1992_500km.csv")
+# nd1993_500 <- read.csv("1993_500km.csv")
+# nd1994_500 <- read.csv("1994_500km.csv")
+# nd1995_500 <- read.csv("1995_500km.csv")
+# nd1996_500 <- read.csv("1996_500km.csv")
+# nd1997_500 <- read.csv("1997_500km.csv")
+# nd1998_500 <- read.csv("1998_500km.csv")
+# nd1999_500 <- read.csv("1999_500km.csv")
+# nd2000_500 <- read.csv("2000_500km.csv")
+# nd2001_500 <- read.csv("2001_500km.csv")
+# nd2002_500 <- read.csv("2002_500km.csv")
+# nd2003_500 <- read.csv("2003_500km.csv")
+# nd2004_500 <- read.csv("2004_500km.csv")
+# nd2005_500 <- read.csv("2005_500km.csv")
+# nd2006_500 <- read.csv("2006_500km.csv")
+# nd2007_500 <- read.csv("2007_500km.csv")
+# nd2008_500 <- read.csv("2008_500km.csv")
+# nd2009_500 <- read.csv("2009_500km.csv")
+# nd2010_500 <- read.csv("2010_500km.csv")
+# nd2011_500 <- read.csv("2011_500km.csv")
+# nd2012_500 <- read.csv("2012_500km.csv")
+# nd2013_500 <- read.csv("2013_500km.csv")
+# nd2014_500 <- read.csv("2014_500km.csv")
+# nd2015_500 <- read.csv("2015_500km.csv")
+# nd2016_500 <- read.csv("2016_500km.csv")
+# nd2017_500 <- read.csv("2017_500km.csv")
+# nd2018_500 <- read.csv("2018_500km.csv")
+# nd2019_500 <- read.csv("2019_500km.csv")
+# 
+# km500 <- rbind(nd1989_500, nd1990_500, nd1991_500, nd1992_500, nd1993_500, nd1994_500, nd1995_500, nd1996_500, nd1997_500, nd1998_500, nd1999_500, nd2000_500, nd2001_500, nd2002_500, nd2003_500, nd2004_500, nd2005_500, nd2006_500, nd2007_500, nd2008_500, nd2009_500, nd2010_500, nd2011_500, nd2012_500, nd2013_500, nd2014_500, nd2015_500, nd2016_500, nd2017_500, nd2018_500, nd2019_500) #bind together all 500km datasets
+# saveRDS(km500, "km500raw.rds") #save the 500km dataset
+
+##1000 km
+nd1989_1000 <- read.csv("1989_1000km.csv")
+nd1990_1000 <- read.csv("1990_1000km.csv")
+nd1991_1000 <- read.csv("1991_1000km.csv")
+nd1992_1000 <- read.csv("1992_1000km.csv")
+nd1993_1000 <- read.csv("1993_1000km.csv")
+nd1994_1000 <- read.csv("1994_1000km.csv")
+nd1995_1000 <- read.csv("1995_1000km.csv")
+nd1996_1000 <- read.csv("1996_1000km.csv")
+nd1997_1000 <- read.csv("1997_1000km.csv")
+nd1998_1000 <- read.csv("1998_1000km.csv")
+nd1999_1000 <- read.csv("1999_1000km.csv")
+nd2000_1000 <- read.csv("2000_1000km.csv")
+nd2001_1000 <- read.csv("2001_1000km.csv")
+nd2002_1000 <- read.csv("2002_1000km.csv")
+nd2003_1000 <- read.csv("2003_1000km.csv")
+nd2004_1000 <- read.csv("2004_1000km.csv")
+nd2005_1000 <- read.csv("2005_1000km.csv")
+nd2006_1000 <- read.csv("2006_1000km.csv")
+nd2007_1000 <- read.csv("2007_1000km.csv")
+nd2008_1000 <- read.csv("2008_1000km.csv")
+nd2009_1000 <- read.csv("2009_1000km.csv")
+nd2010_1000 <- read.csv("2010_1000km.csv")
+nd2011_1000 <- read.csv("2011_1000km.csv")
+nd2012_1000 <- read.csv("2012_1000km.csv")
+nd2013_1000 <- read.csv("2013_1000km.csv")
+nd2014_1000 <- read.csv("2014_1000km.csv")
+nd2015_1000 <- read.csv("2015_1000km.csv")
+nd2016_1000 <- read.csv("2016_1000km.csv")
+nd2017_1000 <- read.csv("2017_1000km.csv")
+nd2018_1000 <- read.csv("2018_1000km.csv")
+nd2019_1000 <- read.csv("2019_1000km.csv")
+
+km1000 <- rbind(nd1989_1000, nd1990_1000, nd1991_1000, nd1992_1000, nd1993_1000, nd1994_1000, nd1995_1000, nd1996_1000, nd1997_1000, nd1998_1000, nd1999_1000, nd2000_1000, nd2001_1000, nd2002_1000, nd2003_1000, nd2004_1000, nd2005_1000, nd2006_1000, nd2007_1000, nd2008_1000, nd2009_1000, nd2010_1000, nd2011_1000, nd2012_1000, nd2013_1000, nd2014_1000, nd2015_1000, nd2016_1000, nd2017_1000, nd2018_1000, nd2019_1000) #bind together the 1000km datasets
+saveRDS(km1000, "km1000raw.rds") #save the 1000km dataset
+
+rm(list=(ls()[ls()!="thesis" & ls()!="codebook" & ls()!="ansa3" & ls()!="emdat" & ls()!="emdatloc3" & ls()!="emdat3" & ls()!="ansa3" & ls()!="km100" & ls()!="km250" & ls()!="km500" & ls()!="km1000"])) #keep environment clean by removing obsolete objects
+```
+
+## Join ansa3 and emdatloc3 to all km_dist datasets
+
+Here is where *emdatloc3* and *ansa3* come back into play. I take a subset of their pertinent variables and rename variables as necessary:
+
+```{r}
+emdatloc3 <- read_rds("emdatloc3.rds")
+ansa4 <- read_rds("ansa4.rds")
+# emdatmerge <- subset(emdatloc3, select=(c("X", "Seq", "Disaster Subsubtype", "Event Name", "Region", "Continent", "Origin", "lat", "long")))
+emdatmerge <- subset(emdatloc3, select=(c(event_id, DisasterGroup, DisasterSubgroup, DisasterType, country, ISO, AssociatedDis, AssociatedDis2, DisMagScale, DisMagValue, LocalTime, StartYear, StartMonth, StartDay, EndYear, EndMonth, EndDay, NoInjured, TotalDeaths, NoAffected, NoHomeless, TotalAffected, countryyear, startYMD, endYMD)))
+names(emdatmerge)[names(emdatmerge) == "country"] <- "nd_country" #rename variable
+names(emdatmerge)[names(emdatmerge) == "countryyear"] <- "nd_countryyear" #rename variable
+names(emdatmerge)[names(emdatmerge) == "startYMD"] <- "nd_startYMD" #rename variable
+names(emdatmerge)[names(emdatmerge) == "endYMD"] <- "nd_endYMD" #rename variable
+
+#ansa3 <- read.csv("ansa3.csv")
+ansamerge <- subset(ansa3, select = (c(attack_id, country, dyad_name, region, fatalities, deaths_civilians, side_a, side_b, active_year, type_of_violence, conflict_name, date_start, date_end, deaths_a, deaths_b, deaths_unknown, countryyear)))
+names(ansamerge)[names(ansamerge) == "country"] <- "att_country" #rename variable
+names(ansamerge)[names(ansamerge) == "countryyear"] <- "att_countryyear" #rename variable
+names(ansamerge)[names(ansamerge) == "date_start"] <- "attack_start" #rename variable
+names(ansamerge)[names(ansamerge) == "date_end"] <- "attack_end" #rename variable
+```
+
+Then, I join *emdatmerge* and *ansamerge* to each of the distance threshold datasets, and I save the results:
+
+```{r}
+# km100 <- readRDS("km100raw.rds")
+# km250 <- readRDS("km250raw.rds")
+# km500 <- readRDS("km500raw.rds")
+# km1000 <- readRDS("km1000raw.rds")
+
+# km100.2 <- left_join(km100, emdatmerge, by=c("event_id"))
+# km100.3 <- left_join(km100.2, ansamerge, by=c("attack_id"))
+# saveRDS(km100.3, "km100joined.rds")
+# 
+# km250.2 <- left_join(km250, emdatmerge, by=c("event_id"))
+# km250.3 <- left_join(km250.2, ansamerge, by=c("attack_id"))
+# saveRDS(km250.3, "km250joined.rds")
+# 
+# km500.2 <- left_join(km500, emdatmerge, by=c("event_id"))
+# km500.3 <- left_join(km500.2, ansamerge, by=c("attack_id"))
+# saveRDS(km500.3, "km500joined.rds")
+# 
+# km1000.2 <- left_join(km1000, emdatmerge, by=c("event_id"))
+# km1000.3 <- left_join(km1000.2, ansamerge, by=c("attack_id"))
+# saveRDS(km1000.3, "km1000joined.rds")
+# 
+# rm(list=(ls()[ls()!="thesis" & ls()!="codebook" & ls()!="ansa3" & ls()!="emdatloc3" & ls()!="emdat" & ls()!="km100.3" & ls()!="km250.3" & ls()!="km500.3" & ls()!="km1000.2"])) #clear environment to keep things tidy
+```
+
+## Alternatively, start here:
+
+Because the above code chunks can take a LONG time to process, I saved my intermediate datasets as Rds files along the way so that I can read them in and skip re-processing everything.
+
+At this point, I also realized that I only needed the largest and smallest distance thresholds for the purposes of my write-up, so I proceed with just those two.
+
+```{r}
+km100.3 <- read_rds("km100joined.rds")
+km1000.3 <- read_rds("km1000joined.rds")
+```
+
+## Group by time intervals
+
+Now, I subset each distance threshold dataset to only keep the necessary variables. Then, at each distance threshold, I create a variable *interval* to measure the timespan between a natural disaster and the associated ANSA attack, and I subset attack observations to those that occurred within three years of a natural disaster. I also group each attack observation by natural disaster event, disaster type, and time interval to identify the number of civilian and overall fatalities associated with the attack, natural disaster, and time interval. Lastly, I create plots to visualize what these results mean.
+
+### 100 km
+
+```{r}
+km100_sub <- subset(km100.3, select=(c(event_id, nd_countryyear, DisasterType, TotalAffected, nd_startYMD, att_countryyear, fatalities, deaths_civilians, attack_start, active_year))) #subset variables to only those needed
+
+km100_sub$fatalities <- as.numeric(as.character((km100_sub$fatalities)))
+
+km100_sub2 <- km100_sub %>%
+  mutate(nd_startYMD = ymd(nd_startYMD),
+         attack_start = ymd(ymd_hms(attack_start)), #create date field in lubridate format
+         years = (attack_start - nd_startYMD) / dyears()) %>%  #months field is the time in months spanned between the natural disaster and attack
+  mutate(interval = ifelse(years>=0 & years<0.33, "1", ifelse(years>=0.33 & years<0.66, "2", ifelse(years>=0.66 & years<1, "3", ifelse(years>=1 & years<1.33, "4", ifelse(years>=1.33 & years<1.66, "5", ifelse(years>=1.66 & years<2, "6", ifelse(years>=2 & years <2.33, "7", ifelse(years>=2.33 & years <2.66, "8", ifelse(years>=2.66 & years <3, "9", ifelse(years>=3, "10", ifelse(years<=0 & years>-0.33, "-1", ifelse(years<=-0.33 & years>-0.66, "-2", ifelse(years<=-0.66 & years>-1, "-3", ifelse(years<=-1 & years>-1.33, "-4", ifelse(years<=-1.33 & years>-1.66, "-5", ifelse(years<=-1.66 & years>-2, "-6", ifelse(years<=-2 & years>-2.33, "-7", ifelse(years<=-2.33 & years>-2.66, "-8", ifelse(years<=-2.66 & years>-3, "-9", ifelse(years<=-3, "-10", NA))))))))))))))))))))) #separate cases into 4-month intervals
+
+# km100_sub2$interval <- factor(km100_sub2$interval, levels=c("20-24 B", "16-20 B", "12-16 B", "8-12 B", "4-8 B", "0-4 B", "0-4 A", "4-8 A", "8-12 A", "12-16 A", "16-20 A", "20-24 A")) ##uncomment if not making ggplots (otherwise keep interval as numeric variable so that labels work)
+
+km100_sub3 <- subset(km100_sub2, years >-3 & years <3) #subset to cases within 3 years of a natural disaster
+
+km100_sub4 <- km100_sub3 %>%
+  group_by(event_id, interval, DisasterType) %>%
+  summarize(fatalities = sum(fatalities, na.rm = TRUE), civcas = sum(deaths_civilians, na.rm = TRUE)) #summarize the fatalities occurring in each unique combination of event, time interval, and disaster type
+
+km100_sub5 <- na.omit(km100_sub4) #drop NAs
+saveRDS(km100_sub5, "km100_sub5.rds")
+
+# km100_sub5 <-  readRDS("km100_sub5.rds")
+
+km100_sub5$interval <- as.numeric(km100_sub5$interval)
+
+km100_sub5$civcaslog <- log(km100_sub5$civcas + 0.000001) #log of civilian casualties
+km100_sub5$fatalitieslog <- log(km100_sub5$fatalities + 0.000001) #log of fatalities
+
+km100_sub6 <-  km100_sub5 %>% group_by(interval) %>% 
+  summarize(xfatlog=mean(fatalitieslog), xfat=mean(fatalities), xcivcaslog=mean(civcaslog), xcivcas=mean(civcas)) #take means of log/non-log civilian casualties and fatalities
+saveRDS(km100_sub6, "km100_sub6.rds")
+
+
+brk2 <- km100_sub6$interval * 4 #establish where breaks are to place ggplot labels at every 4 months
+
+ggplot(km100_sub6, aes(x=interval, y=xfat)) + geom_point() + 
+  geom_smooth(method='loess', color="#9C6A6A", fill="#C3A6A6") +
+  scale_x_continuous(limits=c(-9,9), breaks = km100_sub6$interval, labels = brk2) + 
+  geom_vline(xintercept=0, color="red", size=.5) + 
+  theme(title = element_text(size=9), 
+        axis.text.x = element_text(size=6), 
+        axis.text.y = element_text(size=6), 
+        axis.title.x = element_text(size=7), 
+        axis.title.y = element_text(size=7),
+        panel.grid.minor.x = element_blank()) +  labs(x = "4-Month Intervals", y = "Mean Fatalities", title = "Mean Fatalities within 100 Geodesic Kilometers,\nBefore and After Natural Disasters")
+
+ggplot(km100_sub6, aes(x=interval, y=xfatlog)) + geom_point() +
+  geom_smooth(method='loess', color="#9C6A6A", fill="#C3A6A6") +
+  scale_x_continuous(limits=c(-9,9), breaks = km100_sub6$interval, labels = brk2) + 
+  geom_vline(xintercept=0, color="red", size=.5) + 
+  theme(title = element_text(size=9), 
+        axis.text.x = element_text(size=6), 
+        axis.text.y = element_text(size=6), 
+        axis.title.x = element_text(size=7), 
+        axis.title.y = element_text(size=7),
+        panel.grid.minor.x = element_blank()) +  labs(x = "4-Month Intervals", y = "Mean Logged Fatalities", title = "Mean Logged Fatalities within 100 Geodesic Kilometers,\nBefore and After Natural Disasters")
+
+ggplot(km100_sub6, aes(x=interval, y=xcivcas)) + geom_point() +
+  geom_smooth(method='loess', color="#9C6A6A", fill="#C3A6A6") +
+  scale_x_continuous(limits=c(-9,9), breaks = km100_sub6$interval, labels = brk2) + 
+  geom_vline(xintercept=0, color="red", size=.5) + 
+  theme(title = element_text(size=9), 
+        axis.text.x = element_text(size=6), 
+        axis.text.y = element_text(size=6), 
+        axis.title.x = element_text(size=7), 
+        axis.title.y = element_text(size=7),
+        panel.grid.minor.x = element_blank()) + labs(x = "4-Month Intervals", y = "Mean Civilian Casualties", title = "Mean Civilian Casualties within 100 Geodesic Kilometers,\nBefore and After Natural Disasters")
+
+ggplot(km100_sub6, aes(x=interval, y=xcivcaslog)) + geom_point() + 
+  geom_smooth(method='loess', color="#9C6A6A", fill="#C3A6A6") +
+  scale_x_continuous(limits=c(-9,9), breaks = km100_sub6$interval, labels = brk2) + 
+  geom_vline(xintercept=0, color="red", size=.5) + 
+  theme(title = element_text(size=9), 
+        axis.text.x = element_text(size=6), 
+        axis.text.y = element_text(size=6), 
+        axis.title.x = element_text(size=7), 
+        axis.title.y = element_text(size=7),
+        panel.grid.minor.x = element_blank()) + 
+  labs(x = "4-Month Intervals", y = "Mean Logged Civilian Casualties", 
+       title = "Mean Logged Civilian Casualties within 100 Geodesic Kilometers,\nBefore and After Natural Disasters")
+```
+
+### 1000 km
+
+```{r}
+# km1000.3 <- readRDS("km1000joined.rds")
+km1000_sub <- subset(km1000.3, select=(c(event_id, nd_countryyear, DisasterType, TotalAffected, nd_startYMD, att_countryyear, fatalities, deaths_civilians, attack_start, active_year)))
+
+km1000_sub$fatalities <- as.numeric(as.character((km1000_sub$fatalities)))
+
+km1000_sub2 <- km1000_sub %>%
+  mutate(nd_startYMD = ymd(nd_startYMD),
+         attack_start = ymd(ymd_hms(attack_start)), #create date field in lubridate format
+         years = (attack_start - nd_startYMD) / dyears()) %>%  #months field is the time in months spanned between nd and attack
+  mutate(interval = ifelse(years>=0 & years<0.33, "1", ifelse(years>=0.33 & years<0.66, "2", ifelse(years>=0.66 & years<1, "3", ifelse(years>=1 & years<1.33, "4", ifelse(years>=1.33 & years<1.66, "5", ifelse(years>=1.66 & years<2, "6", ifelse(years>=2 & years <2.33, "7", ifelse(years>=2.33 & years <2.66, "8", ifelse(years>=2.66 & years <3, "9", ifelse(years>=3, "10", ifelse(years<=0 & years>-0.33, "-1", ifelse(years<=-0.33 & years>-0.66, "-2", ifelse(years<=-0.66 & years>-1, "-3", ifelse(years<=-1 & years>-1.33, "-4", ifelse(years<=-1.33 & years>-1.66, "-5", ifelse(years<=-1.66 & years>-2, "-6", ifelse(years<=-2 & years>-2.33, "-7", ifelse(years<=-2.33 & years>-2.66, "-8", ifelse(years<=-2.66 & years>-3, "-9", ifelse(years<=-3, "-10", NA)))))))))))))))))))))
+
+#km1000_sub2$interval <- factor(km1000_sub2$interval, levels=c("20-24 B", "16-20 B", "12-16 B", "8-12 B", "4-8 B", "0-4 B", "0-4 A", "4-8 A", "8-12 A", "12-16 A", "16-20 A", "20-24 A"))
+
+km1000_sub3 <- subset(km1000_sub2, years >-3 & years <3)
+saveRDS(km1000_sub3, "km1000_sub3.rds")
+
+km1000_sub4 <- km1000_sub3 %>%
+  group_by(event_id, interval, DisasterType) %>%
+  summarize(fatalities = sum(fatalities, na.rm = TRUE), civcas = sum(deaths_civilians, na.rm = TRUE))
+
+km1000_sub5 <- na.omit(km1000_sub4)
+saveRDS(km1000_sub5, "km1000_sub5.rds")
+# km1000_sub5 <- readRDS("km1000_sub5.rds")
+km1000_sub5$interval <- as.numeric(km1000_sub5$interval)
+
+km1000_sub5$civcaslog <- log(km1000_sub5$civcas + 0.000001)
+km1000_sub5$fatalitieslog <- log(km1000_sub5$fatalities + 0.000001)
+
+km1000_sub6 <-  km1000_sub5 %>% group_by(interval) %>% 
+  summarize(xfatlog=mean(fatalitieslog), xfat=mean(fatalities), xcivcaslog=mean(civcaslog), xcivcas=mean(civcas))
+saveRDS(km1000_sub6, "km1000_sub6.rds")
+
+brk2 <- km1000_sub6$interval * 4
+
+ggplot(km1000_sub6, aes(x=interval, y=xfat)) + geom_point() + 
+  geom_smooth(method='loess', color="#9C6A6A", fill="#C3A6A6") +
+  scale_x_continuous(limits=c(-9,9), breaks = km1000_sub6$interval, labels = brk2) + 
+  geom_vline(xintercept=0, color="red", size=.5) + 
+  theme(title = element_text(size=9), 
+        axis.text.x = element_text(size=6), 
+        axis.text.y = element_text(size=6), 
+        axis.title.x = element_text(size=7), 
+        axis.title.y = element_text(size=7),
+        panel.grid.minor.x = element_blank()) +  labs(x = "4-Month Intervals", y = "Mean Fatalities", title = "Mean Fatalities within 1000 Geodesic Kilometers,\nBefore and After Natural Disasters")
+
+ggplot(km1000_sub6, aes(x=interval, y=xfatlog)) + geom_point() +
+  geom_smooth(method='loess', color="#9C6A6A", fill="#C3A6A6") +
+  scale_x_continuous(limits=c(-9,9), breaks = km1000_sub6$interval, labels = brk2) + 
+  geom_vline(xintercept=0, color="red", size=.5) + 
+  theme(title = element_text(size=9), 
+        axis.text.x = element_text(size=6), 
+        axis.text.y = element_text(size=6), 
+        axis.title.x = element_text(size=7), 
+        axis.title.y = element_text(size=7),
+        panel.grid.minor.x = element_blank()) +  labs(x = "4-Month Intervals", y = "Mean Logged Fatalities", title = "Mean Logged Fatalities within 1000 Geodesic Kilometers,\nBefore and After Natural Disasters")
+
+ggplot(km1000_sub6, aes(x=interval, y=xcivcas)) + geom_point() +
+  geom_smooth(method='loess', color="#9C6A6A", fill="#C3A6A6") +
+  scale_x_continuous(limits=c(-9,9), breaks = km1000_sub6$interval, labels = brk2) + 
+  geom_vline(xintercept=0, color="red", size=.5) + 
+  theme(title = element_text(size=9), 
+        axis.text.x = element_text(size=6), 
+        axis.text.y = element_text(size=6), 
+        axis.title.x = element_text(size=7), 
+        axis.title.y = element_text(size=7),
+        panel.grid.minor.x = element_blank()) + labs(x = "4-Month Intervals", y = "Mean Civilian Casualties", title = "Mean Civilian Casualties within 1000 Geodesic Kilometers,\nBefore and After Natural Disasters")
+
+ggplot(km1000_sub6, aes(x=interval, y=xcivcaslog)) + geom_point() + 
+  geom_smooth(method='loess', color="#9C6A6A", fill="#C3A6A6") +
+  scale_x_continuous(limits=c(-9,9), breaks = km1000_sub6$interval, labels = brk2) + 
+  geom_vline(xintercept=0, color="red", size=.5) + 
+  theme(title = element_text(size=9), 
+        axis.text.x = element_text(size=6), 
+        axis.text.y = element_text(size=6), 
+        axis.title.x = element_text(size=7), 
+        axis.title.y = element_text(size=7),
+        panel.grid.minor.x = element_blank()) + 
+  labs(x = "4-Month Intervals", y = "Mean Logged Civilian Casualties", 
+       title = "Mean Logged Civilian Casualties within 1000 Geodesic Kilometers,\nBefore and After Natural Disasters")
+
+```
+
+## Effects plots
+
+I also make effects plots for these findings and run linear regressions to gauge the strength of the geospatial and temporal relationships between ANSA attack fatalities and natural disasters.
+
+```{r}
+##100 KM
+km100_sub5$interval.f <- as.factor(km100_sub5$interval)
+km100_sub5 <- within(km100_sub5, interval.f <- relevel(interval.f, ref = "-1"))
+levels(km100_sub5$interval.f) <- c("0-4 Months Before", "32-36 Months Before", "28-32 Months Before", "24-28 Months Before", "20-24 Months Before", "16-20 Months Before", "12-16 Months Before", "8-12 Months Before", "4-8 Months Before", "0-4 Months After", "4-8 Months After", "8-12 Months After", "12-16 Months After", "16-20 Months After", "20-24 Months After", "24-28 Months After", "28-32 Months After", "32-36 Months After")
+
+fat100 <- lm(fatalities ~ interval+ I(interval^2) + DisasterType, data = km100_sub5)
+summary(fat100) #export to stargazer
+mfat100 <- margins(fat100)
+plot(mfat100)
+cplot(fat100, "interval", what="effect")
+
+fat100.f <- lm(fatalities ~ interval.f + DisasterType, data = km100_sub5)
+summary(fat100.f) #export to stargazer
+summary(margins(fat100.f, variables = "interval.f"))
+mfat100.f <- margins(fat100.f)
+plot(mfat100.f)
+cplot(fat100.f, "interval", what="pred")
+
+fatlog100 <- lm(fatalitieslog ~ interval + I(interval^2) + DisasterType, data = km100_sub5)
+summary(fatlog100) #export to stargazer
+mfatlog100 <- margins(fatlog100)
+plot(mfatlog100)
+cplot(fatlog100, "interval", what="effect")
+
+fatlog100.f <- lm(fatalitieslog ~ interval.f + DisasterType, data = km100_sub5)
+summary(fatlog100.f) #export to stargazer
+mfatlog100.f <- margins(fatlog100.f)
+plot(mfatlog100.f)
+cplot(fatlog100.f, "interval", what="pred")
+
+civ100 <- lm(civcas ~ interval + I(interval^2) + DisasterType, data = km100_sub5)
+summary(civ100) #export to stargazer
+mciv100 <- margins(civ100)
+plot(mciv100)
+cplot(civ100, "interval", what="effect")
+
+civ100.f <- lm(civcas ~ interval.f + DisasterType, data = km100_sub5)
+summary(civ100.f) #export to stargazer
+mciv100.f <- margins(civ100.f)
+plot(mciv100.f)
+cplot(civ100.f, "interval", what="pred")
+
+civlog100 <- lm(civcaslog ~ interval + I(interval^2) + DisasterType, data = km100_sub5)
+summary(civlog100) #export to stargazer
+mcivlog100 <- margins(civlog100)
+plot(mcivlog100)
+cplot(civlog100, "interval", what="effect")
+
+civlog100.f <- lm(civcaslog ~ interval.f + DisasterType, data = km100_sub5)
+summary(civlog100.f) #export to stargazer
+mcivlog100.f <- margins(civlog100.f)
+plot(mcivlog100.f)
+cplot(civlog100.f, "interval", what="pred")
+
+
+##1000 KM
+km1000_sub5$interval.f <- as.factor(km1000_sub5$interval)
+km1000_sub5 <- within(km1000_sub5, interval.f <- relevel(interval.f, ref = "-1"))
+levels(km1000_sub5$interval.f) <- c("0-4 Months Before", "32-36 Months Before", "28-32 Months Before", "24-28 Months Before", "20-24 Months Before", "16-20 Months Before", "12-16 Months Before", "8-12 Months Before", "4-8 Months Before", "0-4 Months After", "4-8 Months After", "8-12 Months After", "12-16 Months After", "16-20 Months After", "20-24 Months After", "24-28 Months After", "28-32 Months After", "32-36 Months After")
+
+fat1000 <- lm(fatalities ~ interval+ I(interval^2) + DisasterType, data = km1000_sub5)
+summary(fat1000) #export to stargazer
+mfat1000 <- margins(fat1000)
+plot(mfat1000)
+cplot(fat1000, "interval", what="effect")
+
+fat1000.f <- lm(fatalities ~ interval.f + DisasterType, data = km1000_sub5)
+summary(fat1000.f) #export to stargazer
+summary(margins(fat1000.f, variables = "interval.f"))
+mfat1000.f <- margins(fat1000.f)
+plot(mfat1000.f)
+cplot(fat1000.f, "interval", what="pred")
+
+fatlog1000 <- lm(fatalitieslog ~ interval + I(interval^2) + DisasterType, data = km1000_sub5)
+summary(fatlog1000) #export to stargazer
+mfatlog1000 <- margins(fatlog1000)
+plot(mfatlog1000)
+cplot(fatlog1000, "interval", what="effect")
+
+fatlog1000.f <- lm(fatalitieslog ~ interval.f + DisasterType, data = km1000_sub5)
+summary(fatlog1000.f) #export to stargazer
+mfatlog1000.f <- margins(fatlog1000.f)
+plot(mfatlog1000.f)
+cplot(fatlog1000.f, "interval", what="pred")
+
+civ1000 <- lm(civcas ~ interval + I(interval^2) + DisasterType, data = km1000_sub5)
+summary(civ1000) #export to stargazer
+mciv1000 <- margins(civ1000)
+plot(mciv1000)
+cplot(civ1000, "interval", what="effect")
+
+civ1000.f <- lm(civcas ~ interval.f + DisasterType, data = km1000_sub5)
+summary(civ1000.f) #export to stargazer
+mciv1000.f <- margins(civ1000.f)
+plot(mciv1000.f)
+cplot(civ1000.f, "interval", what="pred")
+
+civlog1000 <- lm(civcaslog ~ interval + I(interval^2) + DisasterType, data = km1000_sub5)
+summary(civlog1000) #export to stargazer
+mcivlog1000 <- margins(civlog1000)
+plot(mcivlog1000)
+cplot(civlog1000, "interval", what="effect")
+
+civlog1000.f <- lm(civcaslog ~ interval.f + DisasterType, data = km1000_sub5)
+summary(civlog1000.f) #export to stargazer
+mcivlog1000.f <- margins(civlog1000.f)
+plot(mcivlog1000.f)
+cplot(civlog1000.f, "interval", what="pred")
+```
+
+## Export regression tables
+
+As with the MLR models, I export the regression tables:
+
+```{r}
+stargazer(civ100, civ100.f, civ1000, civ1000.f,
+          type="html",
+          align=TRUE,
+          report="vc*",
+          title="Mean Civilian Casualties as a Function of Time Intervals",
+          dep.var.caption  = c("Dependent Variable: Mean Civilian Casualties"),
+          dep.var.labels=c("Within 100 km", "Within 1000 km"),
+          column.separate = c(2, 2),
+          out="SA_civcasmean.htm")
+
+stargazer(civlog100, civlog100.f, civlog1000, civlog1000.f,
+          type="html",
+          align=TRUE,
+          report="vc*",
+          title="Mean Logged Civilian Casualties as a Function of Time Intervals",
+          dep.var.caption  = c("Dependent Variable: Mean Logged Civilian Casualties"),
+          dep.var.labels=c("Within 100 km", "Within 1000 km"),
+          column.separate = c(2, 2),
+          out="SA_civcaslog.htm")
+
+stargazer(fat100, fat100.f, fat1000, fat1000.f,
+          type="html",
+          align=TRUE,
+          report="vc*",
+          title="Mean Fatalities as a Function of Time Intervals",
+          dep.var.caption  = c("Dependent Variable: Mean Fatalities"),
+          dep.var.labels=c("Within 100 km", "Within 1000 km"),
+          column.separate = c(2, 2),
+          out="SA_fatmean.htm")
+
+stargazer(fatlog100, fatlog100.f, fatlog1000, fatlog1000.f,
+          type="html",
+          align=TRUE,
+          report="vc*",
+          title="Mean Logged Fatalities as a Function of Time Intervals",
+          dep.var.caption  = c("Dependent Variable: Mean Logged Fatalities"),
+          dep.var.labels=c("Within 100 km", "Within 1000 km"),
+          column.separate = c(2, 2),
+          out="SA_fatlog.htm")
+```
+
+##Variable exploration
+
+```{r}
+ggplot(km100_sub5, aes(interval)) + geom_histogram() 
+ggplot(km100_sub5, aes(fatalities)) + geom_histogram() 
+ggplot(km100_sub5, aes(civcas)) + geom_histogram() 
+ggplot(km100_sub5, aes(civcaslog)) + geom_histogram() 
+ggplot(km100_sub5, aes(fatalitieslog)) + geom_histogram() 
+ggplot(km100_sub5, aes(interval.f)) + geom_bar() 
+ggplot(km100_sub5, aes(DisasterType)) + geom_bar() 
+
+ggplot(km100_sub6, aes(interval)) + geom_histogram() 
+ggplot(km100_sub6, aes(xfat)) + geom_histogram() 
+ggplot(km100_sub6, aes(xfatlog)) + geom_histogram() 
+ggplot(km100_sub6, aes(xcivcas)) + geom_histogram() 
+ggplot(km100_sub6, aes(xcivcaslog)) + geom_histogram() 
+
+ggplot(km1000_sub5, aes(interval)) + geom_histogram() 
+ggplot(km1000_sub5, aes(fatalities)) + geom_histogram() 
+ggplot(km1000_sub5, aes(civcas)) + geom_histogram() 
+ggplot(km1000_sub5, aes(civcaslog)) + geom_histogram() 
+ggplot(km1000_sub5, aes(fatalitieslog)) + geom_histogram() 
+
+ggplot(km1000_sub6, aes(interval)) + geom_histogram() 
+ggplot(km1000_sub6, aes(xfat)) + geom_histogram() 
+ggplot(km1000_sub6, aes(xfatlog)) + geom_histogram() 
+ggplot(km1000_sub6, aes(xcivcas)) + geom_histogram() 
+ggplot(km1000_sub6, aes(xcivcaslog)) + geom_histogram() 
+
+```

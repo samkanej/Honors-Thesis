@@ -1,0 +1,359 @@
+---
+title: "2. Statistical models"
+author: "Sam Kane Jiménez"
+output: html_document
+---
+
+```{r, setup}
+knitr::opts_chunk$set(echo=FALSE,
+                      warning=FALSE,
+                      message=FALSE,
+                      out.width='40%',
+                      fig.dim=c(6,4))
+```
+
+# Statistical Models
+
+This Rmd file covers the statistical models that I created, ran, and interpreted for this project.
+
+Now that the data is in a neatly analyzable format, it's time to run multiple linear regression (MLR) models. These models use the *thesis* dataframe.
+
+*Note:* Before kicking off, I've made sure to set my working directory to the folder where this Rmd file and the datasets I will be using are all saved. I then load in the R packages that I will need throughout the entire research process. I also load in the datasets created in the previous section:
+
+```{r}
+library(descr)
+library(car)
+library(carData)
+library(stats)
+library(MASS)
+library(readxl)
+library(tidyverse)
+library(tidyr)
+library(knitr)
+library(ggplot2)
+library(dplyr)
+library(margins)
+library(AER)
+library(effects)
+library(nnet)
+library(nlme)
+library(lme4)
+library(sjlabelled)
+library(eyelinker)
+library(survey)
+library(codebook)
+library(ordinal)
+library(sjstats)
+library(Matrix)
+library(boot)
+library(visreg)
+library(stringr)
+library(lubridate)
+library(reshape2)
+library(stargazer)
+library(wesanderson)
+
+thesisCYG <- readRDS("thesisCYG.rds")
+
+```
+
+## Examining the variables
+
+I start by looking at a summary of the variables and plots of their distributions to see if they require any transformations.
+
+```{r}
+# summary(thesisCYG)
+# ggplot(thesisCYG, aes(year)) + geom_histogram() #numeric; slight left skew
+# ggplot(thesisCYG, aes(econcrisis)) + geom_bar() #numeric; significant right skew
+# ggplot(thesisCYG, aes(natural)) + geom_histogram() #numeric; right skew
+# ggplot(thesisCYG, aes(count)) + geom_histogram() #numeric; right skew
+# ggplot(thesisCYG, aes(binary)) + geom_bar() #binary; 25%-75% distribution 0-1 respectively
+# ggplot(thesisCYG, aes(side_a)) + geom_bar()
+# ggplot(thesisCYG, aes(side_b)) + geom_bar()
+# ggplot(thesisCYG, aes(active_year)) + geom_bar() #binary; large majority = 1
+# ggplot(thesisCYG, aes(type_of_violence)) + geom_bar() #ordinal; mostly 1, 2 and 3 at similar levels
+# ggplot(thesisCYG, aes(population)) + geom_histogram()
+# ggplot(thesisCYG, aes(logpop)) + geom_histogram()
+# ggplot(thesisCYG, aes(sqkm)) + geom_histogram() #numeric; right skew
+# ggplot(thesisCYG, aes(cyg_fatalities)) + geom_histogram()
+# ggplot(thesisCYG, aes(cyg_civ)) + geom_histogram()
+# ggplot(thesisCYG, aes(perpdeaths)) + geom_histogram()
+# ggplot(thesisCYG, aes(nonperpdeaths)) + geom_histogram()
+# ggplot(thesisCYG, aes(deaths_unknown)) + geom_histogram()
+# ggplot(thesisCYG, aes(fat_pop)) + geom_histogram()
+# ggplot(thesisCYG, aes(civcas_pop)) + geom_histogram()
+# ggplot(thesisCYG, aes(fatalities_lag)) + geom_histogram()
+# ggplot(thesisCYG, aes(civcas_lag)) + geom_histogram()
+# ggplot(thesisCYG, aes(deaths_a)) + geom_histogram()
+# ggplot(thesisCYG, aes(deaths_b)) + geom_histogram()
+```
+
+Based on those findings, I can make the appropriate transformations, plotting them out to ensure transformation improves the distribution's shape:
+
+```{r}
+thesisCYG$sqkm.log <- log(thesisCYG$sqkm)
+hist(thesisCYG$sqkm)
+hist(thesisCYG$sqkm.log)
+ggplot(thesisCYG, aes(sqkm.log)) + geom_histogram() 
+
+thesisCYG$econcrisis.x <- 1/(thesisCYG$econcrisis)
+ggplot(thesisCYG, aes(econcrisis.x)) + geom_histogram()
+
+thesisCYG$count.log <- log(thesisCYG$count + 0.001)
+ggplot(thesisCYG, aes(count.log)) + geom_histogram() 
+
+thesisCYG$natural.log <- log(thesisCYG$natural + 0.001)
+hist(thesisCYG$natural)
+ggplot(thesisCYG, aes(natural.log)) + geom_histogram() 
+
+thesisCYG$fat_pop.log <- log(thesisCYG$fat_pop + 0.001)
+ggplot(thesisCYG, aes(fat_pop.log)) + geom_histogram() 
+
+thesisCYG$civcas_pop.log <- log(thesisCYG$civcas_pop + 0.001)
+ggplot(thesisCYG, aes(civcas_pop.log)) + geom_histogram() 
+
+thesisCYG$cyg_fatalities.log <- log(thesisCYG$cyg_fatalities + 0.001)
+ggplot(thesisCYG, aes(cyg_fatalities.log)) + geom_histogram() 
+
+thesisCYG$cyg_civ.log <- log(thesisCYG$cyg_civ + 0.001)
+ggplot(thesisCYG, aes(cyg_civ.log)) + geom_histogram() 
+
+thesisCYG$perpdeaths.log <- log(thesisCYG$perpdeaths + 0.001)
+ggplot(thesisCYG, aes(perpdeaths.log)) + geom_histogram() 
+
+thesisCYG$nonperpdeaths.log <- log(thesisCYG$nonperpdeaths + 0.001)
+ggplot(thesisCYG, aes(nonperpdeaths.log)) + geom_histogram() 
+
+thesisCYG$deaths_unknown.log <- log(thesisCYG$deaths_unknown + 0.001)
+ggplot(thesisCYG, aes(deaths_unknown.log)) + geom_histogram() 
+```
+
+### Comparing each DV against each IV and among each other
+
+To test for possible issues with multicollinearity and curvature, I compare each DV against each IV, and each DV against remaining DVs, respectively.
+
+*DV = fat_pop.log*
+
+Here are the comparisons for the first DV:
+
+```{r}
+# ##Categorical vars
+# ggplot(thesisCYG, aes(x = active_year, y = fat_pop.log)) + geom_count()
+# ggplot(thesisCYG, aes(x = binary, y = fat_pop.log)) + geom_count()
+# ggplot(thesisCYG, aes(x = region, y = fat_pop.log)) + geom_count()
+# ggplot(data = thesisCYG, aes(x=binary, y=fat_pop.log)) + geom_boxplot() + labs(
+#     x = "Crisis Presence",
+#     y = "Logged Fatality Rate")
+# 
+# ##Numeric vars
+# ggplot(thesisCYG, aes(x = year, y = fat_pop.log)) + geom_boxplot(aes(group=fat_pop.log))
+# ggplot(thesisCYG, aes(x = econcrisis.log, y = fat_pop.log)) + geom_boxplot(aes(group=fat_pop.log))
+# ggplot(thesisCYG, aes(x = natural.log, y = fat_pop.log)) + geom_boxplot(aes(group=fat_pop.log))
+# ggplot(thesisCYG, aes(x = count.log, y = fat_pop.log)) + geom_boxplot(aes(group=fat_pop.log))
+# ggplot(thesisCYG, aes(x = civcas_pop.log, y = fat_pop.log)) + geom_boxplot(aes(group=fat_pop.log))
+# ggplot(thesisCYG, aes(x = perpdeaths.log, y = fat_pop.log)) + geom_boxplot(aes(group=fat_pop.log))
+# ggplot(thesisCYG, aes(x = nonperpdeaths.log, y = fat_pop.log)) + geom_boxplot(aes(group=fat_pop.log))
+# ggplot(thesisCYG, aes(x = sqkm.log, y = fat_pop.log)) + geom_boxplot(aes(group=fat_pop.log))
+```
+
+*DV = civcas_pop.log*
+
+And for the second DV:
+
+```{r}
+##Categorical vars
+# ggplot(thesisCYG, aes(x = active_year, y = civcas_pop.log)) + geom_count() #
+# ggplot(thesisCYG, aes(x = binary, y = civcas_pop.log)) + geom_count() #
+# ggplot(thesisCYG, aes(x = region, y = civcas_pop.log)) + geom_count() #
+# ggplot(data = thesisCYG, aes(x=binary, y=civcas_pop.log)) + geom_boxplot() + labs(
+#     x = "Crisis Presence",
+#     y = "Logged Civilian Casualty Rate")
+# 
+# ##Numeric vars
+# ggplot(thesisCYG, aes(x = year, y = civcas_pop.log)) + geom_boxplot(aes(group=civcas_pop.log))
+# ggplot(thesisCYG, aes(x = econcrisis.x, y = civcas_pop.log)) + geom_boxplot(aes(group=civcas_pop.log))
+# ggplot(thesisCYG, aes(x = natural.log, y = civcas_pop.log)) + geom_boxplot(aes(group=civcas_pop.log))
+# ggplot(thesisCYG, aes(x = count.log, y = civcas_pop.log)) + geom_boxplot(aes(group=civcas_pop.log))
+# ggplot(thesisCYG, aes(x = fat_pop.log, y = civcas_pop.log)) + geom_boxplot(aes(group=civcas_pop.log))
+# ggplot(thesisCYG, aes(x = perpdeaths.log, y = civcas_pop.log)) + geom_boxplot(aes(group=civcas_pop.log))
+# ggplot(thesisCYG, aes(x = nonperpdeaths.log, y = civcas_pop.log)) + geom_boxplot(aes(group=civcas_pop.log))
+# ggplot(thesisCYG, aes(x = sqkm.log, y = civcas_pop.log)) + geom_boxplot(aes(group=civcas_pop.log))
+```
+
+*T-tests and F-tests for the impact of each IV on the DV*
+
+```{r}
+attach(thesisCYG)
+t.test(year, fat_pop.log)
+t.test(natural.log, fat_pop.log)
+t.test(count.log, fat_pop.log)
+t.test(civcas_pop.log, fat_pop.log)
+t.test(perpdeaths.log, fat_pop.log)
+t.test(nonperpdeaths.log, fat_pop.log)
+t.test(sqkm.log, fat_pop.log)
+```
+
+## Multiple linear regression models
+
+I run several models, with and without lags and with and without regional controls.
+
+*Models without lags with regional controls*
+
+```{r}
+binary.fat <- lm(fat_pop.log ~ year + sqkm.log + region + active_year + binary) #impact of crisis vs. not on total fatalities
+summary(binary.fat)
+mbinary.fat <- margins(binary.fat)
+plot(mbinary.fat)
+
+binary.civ <- lm(civcas_pop.log ~ year + sqkm.log + region + active_year + binary) #impact of crisis vs. not on civilian fatalities
+summary(binary.civ)
+count.fat <- lm(fat_pop.log ~ year + sqkm.log + region + active_year + count) #impact of crisis tally on total fatalities
+summary(count.fat)
+count.civ <- lm(civcas_pop.log ~ year + sqkm.log + region + active_year + count) #impact of crisis tally on civilian fatalities
+summary(count.civ)
+econ.fat <- lm(fat_pop.log ~ year + sqkm.log + region + active_year + econcrisis) #impact of economic crises on total fatalities
+summary(econ.fat)
+econ.civ <- lm(civcas_pop.log ~ year + sqkm.log + region + active_year + econcrisis) #impact of economic crises on total fatalities
+summary(econ.civ)
+nat.fat <- lm(fat_pop.log ~ year + sqkm.log + region + active_year + natural) #impact of natural crises on total fatalities
+summary(nat.fat)
+nat.civ <- lm(civcas_pop.log ~  year + sqkm.log + region + active_year + natural) #impact of natural crises on total fatalities
+summary(nat.civ)
+```
+
+*Models without lags or regional controls*
+
+```{r}
+binary.fat.c <- lm(fat_pop.log ~  year + sqkm.log + active_year + binary) #impact of crisis vs. not on total fatalities
+summary(binary.fat.c)
+binary.civ.c <- lm(civcas_pop.log ~ year + sqkm.log + active_year + binary) #impact of crisis vs. not on civilian fatalities
+summary(binary.civ.c)
+count.fat.c <- lm(fat_pop.log ~ year + sqkm.log + active_year + count) #impact of crisis tally on total fatalities
+summary(count.fat.c)
+count.civ.c <- lm(civcas_pop.log ~ year + sqkm.log + active_year + count) #impact of crisis tally on civilian fatalities
+summary(count.civ.c)
+econ.fat.c <- lm(fat_pop.log ~ year + sqkm.log + active_year + econcrisis) #impact of economic crises on total fatalities
+summary(econ.fat.c)
+econ.civ.c <- lm(civcas_pop.log ~ year + sqkm.log + active_year + econcrisis) #impact of economic crises on total fatalities
+summary(econ.civ.c)
+nat.fat.c <- lm(fat_pop.log ~ year + sqkm.log + active_year + natural) #impact of natural crises on total fatalities
+summary(nat.fat.c)
+nat.civ.c <- lm(civcas_pop.log ~ year + sqkm.log + active_year + natural) #impact of natural crises on total fatalities
+summary(nat.civ.c)
+```
+
+*Models with lags and regional controls*
+
+```{r}
+binary.fatlag <- lm(fatalities_lag ~ binary + year + region + active_year + sqkm.log) #impact of crisis vs. not on total fatalities
+summary(binary.fatlag)
+binary.civlag <- lm(civcas_lag ~ binary + year + region + active_year + sqkm.log) #impact of crisis vs. not on civilian fatalities
+summary(binary.civlag)
+count.fatlag <- lm(fatalities_lag ~ count + year + region + active_year + sqkm.log) #impact of crisis tally on total fatalities
+summary(count.fatlag)
+count.civlag <- lm(civcas_lag ~ count + year + region + active_year + sqkm.log) #impact of crisis tally on civilian fatalities
+summary(count.civlag)
+econ.fatlag <- lm(fatalities_lag ~ econcrisis + year + active_year + region + sqkm.log) #impact of economic crises on total fatalities
+summary(econ.fatlag)
+econ.civlag <- lm(civcas_lag ~ econcrisis + year + region + active_year + sqkm.log) #impact of economic crises on total fatalities
+summary(econ.civlag)
+nat.fatlag <- lm(fatalities_lag ~ natural + year + region + active_year + sqkm.log) #impact of natural crises on total fatalities
+summary(nat.fatlag)
+nat.civlag <- lm(civcas_lag ~ natural + year + region + active_year + sqkm.log) #impact of natural crises on total fatalities
+summary(nat.civlag)
+```
+
+*Models with lags without regional controls*
+
+```{r}
+binary.fatlag.c <- lm(fatalities_lag ~ binary + year + sqkm.log + active_year) #impact of crisis vs. not on total fatalities
+summary(binary.fatlag.c)
+binary.civlag.c <- lm(civcas_lag ~ binary + year + sqkm.log + active_year) #impact of crisis vs. not on civilian fatalities
+summary(binary.civlag.c)
+count.fatlag.c <- lm(fatalities_lag ~ count + year + sqkm.log + active_year) #impact of crisis tally on total fatalities
+summary(count.fatlag.c)
+count.civlag.c <- lm(civcas_lag ~ count + year + sqkm.log + active_year) #impact of crisis tally on civilian fatalities
+summary(count.civlag.c)
+econ.fatlag.c <- lm(fatalities_lag ~ econcrisis + year + sqkm.log + active_year) #impact of economic crises on total fatalities
+summary(econ.fatlag.c)
+econ.civlag.c <- lm(civcas_lag ~ econcrisis + year + sqkm.log + active_year) #impact of economic crises on total fatalities
+summary(econ.civlag.c)
+nat.fatlag.c <- lm(fatalities_lag ~ natural + year + sqkm.log + active_year) #impact of natural crises on total fatalities
+summary(nat.fatlag.c)
+nat.civlag.c <- lm(civcas_lag ~ natural + year + sqkm.log + active_year) #impact of natural crises on total fatalities
+summary(nat.civlag.c)
+
+natecon.fat <- lm(fat_pop.log ~ year + sqkm.log + region + active_year + natural + econcrisis) #impact of natural crises on total fatalities
+summary(natecon.fat)
+natecon.civ <- lm(civcas_pop.log ~  year + sqkm.log + region + active_year + natural + econcrisis) #impact of natural crises on total fatalities
+summary(natecon.civ)
+natecon.fat.c <- lm(fat_pop.log ~ year + sqkm.log + active_year + natural + econcrisis) #impact of natural crises on total fatalities
+summary(natecon.fat.c)
+natecon.civ.c <- lm(civcas_pop.log ~ year + sqkm.log + active_year + natural + econcrisis) #impact of natural crises on total fatalities
+summary(natecon.civ.c)
+natecon.fatlag <- lm(fatalities_lag ~ natural + econcrisis + year + region + active_year + sqkm.log) #impact of natural crises on total fatalities
+summary(natecon.fatlag)
+natecon.civlag <- lm(civcas_lag ~ natural + econcrisis + year + region + active_year + sqkm.log) #impact of natural crises on total fatalities
+summary(natecon.civlag)
+natecon.fatlag.c <- lm(fatalities_lag ~ natural +econcrisis + year + sqkm.log + active_year) #impact of natural crises on total fatalities
+summary(natecon.fatlag.c)
+natecon.civlag.c <- lm(civcas_lag ~ natural + econcrisis + year + sqkm.log + active_year) #impact of natural crises on total fatalities
+summary(natecon.civlag.c)
+
+detach(thesisCYG)
+```
+
+## Export regression tables
+
+The following code exports the regression tables in HTML format.
+
+```{r}
+stargazer(binary.fat, binary.fat.c, count.fat, count.fat.c, econ.fat, #econ.fat.c, nat.fat, nat.fat.c,
+          type="html",
+          align=TRUE,
+          report="vc*",
+          title="Logged Fatality Rates as a Function of Crises",
+          dep.var.caption  = "Dependent Variable: Logged Fatality Rate",
+          dep.var.labels="Model Focus",
+          column.labels   = c("Crisis Presence", "Crisis Count", "Economic Crisis", "Natural Disaster"),
+          column.separate = c(2, 2, 2, 2),
+          covariate.labels=c("Year","Logged Territory","America", "Asia", "Europe", "Middle East", "Active Conflict", "Crisis Presence", "Crisis Count", "Economic Crisis", "Natural Disaster"),
+          out="MLR_fatalities_outputcyg.htm")
+
+stargazer(binary.civ, binary.civ.c, count.civ, count.civ.c, econ.civ, #econ.civ.c, nat.civ, nat.civ.c,
+          type="html",
+          align=TRUE,
+          report="vc*",
+          title="Logged Civilian Casualty Rates as a Function of Crises",
+          dep.var.caption  = "Dependent Variable: Logged Civilian Casualty Rate",
+          dep.var.labels="Model Focus",
+          column.labels   = c("Crisis Presence", "Crisis Count", "Economic Crisis", "Natural Disaster"),
+          column.separate = c(2, 2, 2, 2),
+          covariate.labels=c("Year","Logged Territory","America", "Asia", "Europe", "Middle East", "Active Conflict", "Crisis Presence", "Crisis Count", "Economic Crisis", "Natural Disaster"),
+          out="MLR_casualties_outputcyg.htm")
+
+stargazer(binary.fatlag, binary.fatlag.c, count.fatlag, count.fatlag.c, #econ.fatlag, econ.fatlag.c, nat.fatlag, nat.fatlag.c,
+          type="html",
+          align=TRUE,
+          report="vc*",
+          title="Change in Fatality Rate as a Function of Crises",
+          dep.var.caption  = "Dependent Variable: 1-Year Change in Fatality Rate",
+          dep.var.labels="Model Focus",
+          column.labels   = c("Crisis Presence", "Crisis Count", "Economic Crisis", "Natural Disaster"),
+          column.separate = c(2, 2, 2, 2),
+          covariate.labels=c("Crisis Presence","Crisis Count","Economic Crisis", "Natural Disaster", "Year", "America", "Asia", "Europe", "Middle East", "Active Conflict", "Logged Territory"),
+          out="MLR_fatalities_laggedcyg.htm")
+
+stargazer(binary.civlag, binary.civlag.c, count.civlag, count.civlag.c, #econ.civlag, econ.civlag.c, nat.civlag, nat.civlag.c,
+          type="html",
+          align=TRUE,
+          report="vc*",
+          title="Change in Civilian Casualty Rate as a Function of Crises",
+          dep.var.caption  = "Dependent Variable: 1-Year Change in Civilian Casualty Rate",
+          dep.var.labels="Model Focus",
+          column.labels   = c("Crisis Presence", "Crisis Count", "Economic Crisis", "Natural Disaster"),
+          column.separate = c(2, 2, 2, 2),
+          covariate.labels=c("Crisis Presence","Crisis Count","Economic Crisis", "Natural Disaster", "Year", "America", "Asia", "Europe", "Middle East", "Active Conflict", "Logged Territory"),
+           out="MLR_casualties_laggedcyg.htm")
+
+```
