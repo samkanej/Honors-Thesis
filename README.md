@@ -1,6 +1,13 @@
 # Honors-Thesis
 This repo walks through the R code that I wrote and executed as part of my research and analysis for my undergraduate thesis.
 
+**Files:**
+The files in this repo include the following:
+
+* 4 Rmd files, titled in order, that walk through the R code that supported each phase of the project;
+* The original datasets that I used to create a bespoke dataframe for the purposes of my analysis; and
+* The CSV file outputs from my ArcGIS analysis (note that these are quite large!).
+
 ## Background
 In 2020, I completed my undergraduate honors thesis in government, which examined the apolitical crisis conditions under which armed non-state actors (ANSAs) accrue power. My research hinged on a tripartite methodology to ascertain the crisis conditions under which ANSAs accrue power: a series of linear regression models, a spacial analysis component, and three qualitative case studies. This R Markdown (Rmd) file first outlines how I cleaned and wrangled publicly available data regarding apolitical crises and ANSA attacks to produce unique datasets for quantitative analysis. The document then lays out the statistical models that I constructed to analyze those datasets.
 
