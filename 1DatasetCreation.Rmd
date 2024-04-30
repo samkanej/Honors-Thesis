@@ -1,0 +1,705 @@
+---
+title: "1. Dataset creation"
+author: "Sam Kane Jiménez"
+output: html_document
+---
+
+```{r, setup}
+knitr::opts_chunk$set(echo=FALSE,
+                      warning=FALSE,
+                      message=FALSE,
+                      out.width='40%',
+                      fig.dim=c(6,4))
+```
+
+# Dataset creation
+
+This Rmd file walks through the data-wrangling process to create datasets that I analyze in the subsequent sections.
+
+There is a wealth of datasets relating to conflict, ANSA attacks and operations, and apolitical crises (operationalized here as economic crises or natural disasters). However, for the purposes of the analysis I want to conduct, I first need to ensure compatibility among datasets to then join them into a singular, usable dataframe that I can effectively run through my statistical and spatial models. This section walks through how I set up that master dataframe.
+
+I utilize information on ANSA attacks from Uppsala Conflict Data Program’s Georeferenced Event Dataset ("ansa"), environmental catastrophes from EM-DAT ("emdat"), economic crises from the Global Crisis Dataset ("econ"), and country-year population ("pop") and territory size ("territory") metrics from The World Bank’s DataBank to compose a 41-variable Crisis-ANSA Dataset ("thesisCYG"). This finalized dataset contains 6,712 country-group-year observations occurring across all global regions between 1989 and 2019, importantly including the conflict dyad to which the attack pertains; the number of casualties (for each warring party and for civilians); the number of economic, environmental, and total crises present in a given country-year; and other control variables.
+
+Each of the five publicly available datasets from which I draw information requires cleaning and wrangling to ensure compatibility when merging them into a single dataframe. Each of the following sections reads in an original dataset and shows how I wrangled it to suit my analytical needs. Throughout, I create several intermediary dataframes to help me save my progress and debug my code along the way.
+
+*Note:* Before kicking off, I've made sure to set my working directory to the folder where this Rmd file and the datasets I will be using are all saved. I then load in the R packages that I will need throughout the entire research process:
+
+```{r}
+library(descr)
+library(car)
+library(carData)
+library(stats)
+library(MASS)
+library(readxl)
+library(tidyverse)
+library(tidyr)
+library(knitr)
+library(ggplot2)
+library(dplyr)
+library(margins)
+library(AER)
+library(effects)
+library(nnet)
+library(nlme)
+library(lme4)
+library(sjlabelled)
+library(eyelinker)
+library(survey)
+library(codebook)
+library(ordinal)
+library(sjstats)
+library(Matrix)
+library(boot)
+library(visreg)
+library(stringr)
+library(lubridate)
+library(reshape2)
+library(stargazer)
+library(wesanderson)
+
+```
+
+## Natural disasters: emdat
+
+I started by reading in the emdat database for natural disasters and renaming some of its variables and country names to match the syntax, format, and readability of the final product I envisioned:
+
+```{r}
+emdat <- read_xlsx("EM-DAT.xlsx") #read in the dataframe
+
+#rename variables
+names(emdat)[names(emdat) == "Country"] <- "country" 
+names(emdat)[names(emdat) == "Year"] <- "year" 
+names(emdat)[names(emdat) == "Dis No"] <- "event_id"
+
+#remove all spaces in remaining variable names
+names(emdat) <- gsub(" ", "", names(emdat))
+
+#create country-year variable
+emdat$countryyear <- paste((emdat$ISO), (emdat$year), sep=" ")
+
+#rename countries to match other datasets
+emdat$country[emdat$country == "Venezuela (Bolivarian Republic of)"] <- "Venezuela"
+emdat$country[emdat$country == "United States of America (the)"] <- "United States"
+emdat$country[emdat$country == "United Kingdom of Great Britain and Northern Ireland (the)"] <- "United Kingdom"
+emdat$country[emdat$country == "Taiwan (Province of China)"] <- "Taiwan"
+emdat$country[emdat$country == "Russian Federation (the)"] <- "Russia"
+emdat$country[emdat$country == "Philippines (the)"] <- "Philippines"
+emdat$country[emdat$country == "Netherlands (the)"] <- "Netherlands"
+emdat$country[emdat$country == "Dominican Republic (the)"] <- "Dominican Republic"
+emdat$country[emdat$country == "Korea (the Republic of)"] <- "Korea"
+emdat$country[emdat$country == "Sudan (the)"] <- "Sudan"
+emdat$country[emdat$country == "Côte d’Ivoire"] <- "Cote D'Ivoire"
+emdat$country[emdat$country == "Bolivia (Plurinational State of)"] <- "Bolivia"
+```
+
+I also added labels to some of the variables, which will go into the final dataframe's codebook at the end:
+
+```{r}
+set_label(emdat$Location) <- "Event's location within the country"
+set_label(emdat$EntryCriteria) <- "Reason for coding the disaster event into EM-DAT. 'Kill' refers to 10 or more human deaths. 'Affect' means 100 or more people were affected/injured/homeless."
+set_label(emdat$Seq) <- "Event ID"
+set_label(emdat$TotalAffected) <- "Number of killed, displaced, and injured by event."
+```
+
+Here's where the fun starts. For any blanks (NAs) in a natural disaster's start or end date, I assumed the last (easy) day of the month or the last month of the year, to then be able to create year-month-day variables for each event's start and end, and store them as dates:
+
+```{r}
+#Set date NAs to last day of month (12) or last easy day (30)
+emdat$StartMonth[is.na(emdat$StartMonth)] <- 12
+emdat$StartDay[is.na(emdat$StartDay)] <- 30
+emdat$EndDay[is.na(emdat$EndDay)] <- 30
+emdat$EndMonth[is.na(emdat$EndMonth)] <- 12
+
+#create YMD variables for event start and end
+emdat$startYMD <- paste((emdat$StartYear), (emdat$StartMonth), (emdat$StartDay),sep="-") #create YMD start variable
+emdat$startYMD[is.na(emdat$startYMD)] <- emdat$StartYear[is.na(emdat$startYMD)] #if NA, then copy Start Year onto startYMD
+emdat$endYMD <- paste((emdat$EndYear), (emdat$EndMonth), (emdat$EndDay),sep="-") #create YMD end variable
+emdat$endYMD[is.na(emdat$endYMD)] <- emdat$EndYear[is.na(emdat$endYMD)] #if NA, then copy End Year onto endYMD
+
+#store as dates
+emdat$startYMD <- as.Date(emdat$startYMD) #store as date
+emdat$endYMD <- as.Date(emdat$endYMD) #store as date
+```
+
+This allows me to calculate the duration of each event, saved as a separate variable:
+
+```{r}
+emdat$eventduration <- difftime(emdat$endYMD,emdat$startYMD,units='days') #calculate duration between start and end of event
+emdat$startYMD[emdat$event_id == "1999-0055-MEX"] <- "1999-01-10"
+emdat$startYMD[emdat$event_id == "2010-0109-KAZ"] <- "2010-03-11"
+```
+
+I pause here to see variables of interest's frequency, noting any trends in their distribution that might be important for statistical analysis down the line:
+
+```{r}
+freq(emdat$year) #more data in recent years
+freq(emdat$DisasterGroup)
+freq(emdat$DisasterType)
+freq(emdat$country)
+freq(emdat$eventduration) #log transform
+freq(emdat$TotalDeaths) #might want to log transform
+freq(emdat$TotalAffected) #might want to log transform
+```
+
+Now, I clean the longitude and latitude variables in *emdat*, saving each major change to a new, similarly named dataframe to edit the cases without losing my progress.
+
+EM-DAT lists natural disaster coordinates using the cardinal direction's letters instead of positive and negative values. In other words, north (N) and east (E) values should be positive, while south (S) and west (W) should be negative. I fix this issue by creating a reference object based on the *longitude* and *latitude* variables and then creating new variables, *lat* and *long*, where E and N values are saved numarically and positive, and W and S valuesd are saved numerically and negative.
+
+First, I tackle the longitude values, making sure to view the data afterward to check my work and catch any issues:
+
+```{r}
+#Clean Longitude Values
+a <- emdat$Longitude #make an object of the variable
+emdat$long <- ifelse(str_detect(a, "[EW]") == TRUE, # if string "a" contains E or W,
+  {b <- as.numeric(str_replace(a , "W|E", "")) # replace the E or W in the string with nothing, make new column called "b"
+  ifelse(str_detect(a, "W"), -b, b)}, #if string "a" contained "W", multiply column B by -1; otherwise keep B
+  as.numeric(a)
+) #in the end, new column emdat$long will contain degree values with negatives for Wests and positives for Easts
+
+#View(emdat[which(ifelse(is.na(emdat$Longitude) == FALSE & is.na(emdat$long) == TRUE, TRUE, FALSE)), ]) #view which emdat$Longitude cases are not NAs but when converted to emdat$long are NAs
+emdat2 <- emdat #new dataset to edit cases
+
+#replace the NAs with the appropriate values
+emdat2$long[emdat2$event_id == "1991-0043-CHN"] <- "78.9"
+emdat2$long[emdat2$event_id == "1992-0151-COL"] <- "-76.486" #used earthquake longitude epicenter value from Google
+emdat2$long[emdat2$event_id == "1992-0093-DEU"] <- "5.798"
+emdat2$long[emdat2$event_id == "1997-0011-CHN"] <- "76.998"
+```
+
+Now, rinse and repeat but for the latitude values:
+
+```{r}
+#Clean Latitude Values
+c <- emdat2$Latitude
+emdat2$lat <- ifelse(str_detect(c, "[NS]") == TRUE, # if string "a" contains N or S,
+  {d <- as.numeric(str_replace(c , "N|S", "")) # replace the N or S in the string with nothing, make new column called "d"
+  ifelse(str_detect(c, "S"), -d, d)}, #if string "a" contained "S", multiply column D by -1; otherwise keep D
+  as.numeric(c)
+) #in the end, new column emdat3$lat will contain degree values with negatives for Wests and positives for Easts
+
+#View(emdat2[which(ifelse(is.na(emdat2$Latitude) == FALSE & is.na(emdat2$lat) == TRUE, TRUE, FALSE)), ]) #view which emdat2$Latitude cases are not NAs but when converted to emdat2$lat are NAs
+emdat3 <- emdat2 #new dataset to edit cases
+
+#replace the NAs with the appropriate values
+emdat3$lat[emdat3$event_id == "1992-0093-DEU"] <- "51.153"
+emdat3$lat[emdat3$event_id == "1991-0066-PER"] <- "-5.982"
+```
+
+And save the current emdat version as an .rds file, so that moving forward, I can skip running the above code chunks and instead just read in *emdat3*, which I will use for the spatial analysis component.
+
+```{r}
+saveRDS(emdat, "emdat.rds")
+saveRDS(emdat3, "emdat3.rds")
+```
+
+Now, I winnow down the dataframe to just the variables I'll need for the statistical models, and make sure that all variables are stored in the correct data type:
+
+```{r}
+keep <- c("lat", "long", "ISO", "countryyear", "country", "year", "startYMD", "endYMD", "DisasterGroup", "DisasterType", "DisasterSubtype", "AssociatedDis", "DisMagValue", "DisMagScale", "TotalDeaths", "TotalAffected") #variables to keep from dataframe
+emdat4 <- emdat3[,(names(emdat3) %in% keep)] #keep variables listed above, drop the rest
+
+emdat4$DisasterType <- as.character(emdat4$DisasterType)
+emdat4$DisasterSubtype <- as.character(emdat4$DisasterSubtype)
+```
+
+I create a new dataframe named *natdis*, based on *emdat4*, and add a *count* variable, which is consistently populated with 1 across all observations. Summarizing *count* when grouped by *year* and *country* provides the sum of number of natural disasters in a given country-year (the unit of observation):
+
+```{r}
+natdis <- cbind(emdat4, count = 1) #create new DF based on emdat4 and adding a "count" column populated w/ "1" all the way down
+keepnat <- c("ISO", "country", "year", "DisasterType", "count") #variables to keep from dataframe
+natdis <- natdis[,(names(natdis) %in% keepnat)] #keep variables listed above, drop others
+
+natdis2 <- natdis %>% 
+  group_by(year, country, ISO) %>% #selects unique combinations of these three variables, makes a group for each
+  summarize(natural = sum(count)) #sum the 1's in "count", rendering a total tally of disasters per group
+natdis2$year <- trimws(natdis2$year, which = c("both"))
+natdis2$year <- as.numeric(natdis2$year)
+```
+
+## Economic crises: econ
+
+Wrangling *econ* is a bit simpler.
+
+As with *emdat*, I read in *econ*, rename variables as necessary, and create a country-year variable:
+
+```{r}
+econ <- read_xlsx("Global Crisis Dataset.xlsx", na = c("n/a", "x")) #Economic crises dataset
+
+#rename variables
+names(econ)[names(econ) == "CC3"] <- "ISO"
+names(econ)[names(econ) == "Country"] <- "country"
+names(econ)[names(econ) == "Year"] <- "year"
+```
+
+Then, I drop the variables I won't need and subset to only include observations on or after 1989 (because that's the earliest available data in *ansa*):
+
+```{r}
+econkeep <- c("Banking Crisis", "Systemic Crisis", "Currency Crises", "Inflation Crises", "year", "country") #select columns I want to keep
+econ = econ[,(names(econ) %in% econkeep)] #drop any other columns
+
+econ <- subset(econ, year >= 1989) #subset to observations from 1989 or after
+```
+
+Because I am not differentiating by economic crisis type, I create *econcrisis* and populate it with the sum of each crisis type's value, and then delete those columns:
+
+```{r}
+econ$econcrisis <- econ$`Banking Crisis` + econ$`Systemic Crisis` + econ$`Currency Crises` + econ$`Inflation Crises`
+econ2 = subset(econ, select = -c(3:6))
+```
+
+Then, to be sure, I ensure that there is no white space around *year* and that it is saved as a numeric value.
+
+```{r}
+econ2$year <- trimws(econ2$year, which = c("both")) #remove the white space in year values
+econ2$year <- as.numeric(econ2$year) #ensure year is saved as a numeric data type
+```
+
+## Merging emdat and econ
+
+It's time to merge *natdis2* and *econ2*, which together constitute the crisis data. I use a full join (keeping all observations and variables from both dataframes), joining the two where their year and country variables both match. Cases that don't have a match will appear as their own observation, with the other dataframe's variables populated as NAs.
+
+I then subset the cases to exclude any observations prior to 1989.
+
+```{r}
+crisis <- full_join(econ2, natdis2, by=c("year", "country")) #merge the two dataframes based on shared country and year columns
+crisis2 <- subset(crisis, year >= 1989) #only keep cases from 1989 or later
+```
+
+Then, to ensure that my data only has one row per country-year (the unit of observation), I group observations by year, country, and ISO, and aggregate their *natural* and *econcrisis* values.
+
+```{r}
+crisis3 <- crisis2 %>%
+  group_by(year, country, ISO) %>% 
+  summarize(econcrisis = sum(econcrisis), natural = sum(natural)) #collapse duplicate country-year rows into one by adding the econcrisis values and the natural values
+```
+
+I want each country-year observations to be the same length, which means I need all countries to have the same number of years - even if they did not experience a crisis in said year. So, I group observations by country and ISO and ensure that the variable *year* is complete between the range 1989:2020. If a country-year is missing a year in that range, the following code chunk will add that year observation and populate the remaining variables with NA, which I then replace with 0s.
+
+See here:
+
+```{r}
+crisis3 <- crisis3 %>% 
+  group_by(country, ISO) %>% #group observations by country and ISO
+  complete(year = 1989:2020) #for any years that are missing from 1989 to 2020, add an observation with NA
+crisis3$econcrisis[is.na(crisis3$econcrisis)] <- 0 #NA = no crisis
+crisis3$natural[is.na(crisis3$natural)] <- 0 #NA = no crisis
+```
+
+Then I do some more formatting:
+
+```{r}
+crisis3$ISO <- trimws(crisis3$ISO, which = c("both")) #trim the whitespace for the ISOs
+
+#rename countries to match other datasets
+crisis3$country[crisis3$country == 'Congo (the Democratic Republic of the)'] <- 'Democratic Republic of Congo'
+crisis3$country[crisis3$country == 'Swaziland'] <- 'eSwatini'
+crisis3$country[crisis3$country == 'Macedonia (the former Yugoslav Republic of)'] <- 'Macedonia'
+crisis3$country[crisis3$country == 'Syrian Arab Republic'] <- 'Syria'
+crisis3$country[crisis3$country == 'Niger (the)'] <- 'Niger'
+crisis3$country[crisis3$country == 'Moldova (the Republic of)'] <- 'Moldova'
+crisis3$country[crisis3$country == 'Iran (Islamic Republic of)'] <- 'Iran'
+crisis3$country[crisis3$country == 'Congo (the)'] <- 'Congo (Brazzaville)'
+crisis3$country[crisis3$country == 'Comoros (the)'] <- 'Comoros'
+
+#rename ISOs to match other datasets
+crisis3$ISO[crisis3$country == 'Algeria'] <- 'DZA'
+crisis3$ISO[crisis3$country == 'Australia'] <- 'AUS'
+crisis3$ISO[crisis3$country == 'Angola'] <- 'AGO'
+crisis3$ISO[crisis3$country == 'Austria'] <- 'AUT'
+crisis3$ISO[crisis3$country == 'Belgium'] <- 'BEL'
+crisis3$ISO[crisis3$country == 'Costa Rica'] <- 'CRI'
+crisis3$ISO[crisis3$country == "CoteD'Ivoire"] <- 'CIV'
+crisis3$ISO[crisis3$country == 'Denmark'] <- 'DNK'
+crisis3$ISO[crisis3$country == 'Ecuador'] <- 'ECU'
+crisis3$ISO[crisis3$country == 'Finland'] <- 'FIN'
+crisis3$ISO[crisis3$country == 'Germany'] <- 'DEU'
+crisis3$ISO[crisis3$country == 'Ghana'] <- 'GHA'
+crisis3$ISO[crisis3$country == 'Iceland'] <- 'ISL'
+crisis3$ISO[crisis3$country == 'Kenya'] <- 'KEN'
+crisis3$ISO[crisis3$country == 'Mauritius'] <- 'MUS'
+crisis3$ISO[crisis3$country == 'Morocco'] <- 'MAR'
+crisis3$ISO[crisis3$country == 'Nicaragua'] <- 'NIC'
+crisis3$ISO[crisis3$country == 'Norway'] <- 'NOR'
+crisis3$ISO[crisis3$country == 'Paraguay'] <- 'PRY'
+crisis3$ISO[crisis3$country == 'Poland'] <- 'POL'
+crisis3$ISO[crisis3$country == 'Russia'] <- 'RUS'
+crisis3$ISO[crisis3$country == 'Spain'] <- 'ESP'
+crisis3$ISO[crisis3$country == 'Sweden'] <- 'DZA'
+crisis3$ISO[crisis3$country == 'Zimbabwe'] <- 'ZWE'
+crisis3$ISO[crisis3$country == 'United Kingdom'] <- 'GBR'
+crisis3$ISO[crisis3$country == 'Tunisia'] <- 'TUN'
+crisis3$ISO[crisis3$country == 'Switzerland'] <- 'CHE'
+crisis3$ISO[crisis3$country == 'Ireland'] <- 'IRL'
+crisis3$ISO[crisis3$country == 'El Salvador'] <- 'SLV'
+crisis3$ISO[crisis3$country == 'Singapore'] <- 'SGP'
+crisis3$ISO[crisis3$country == 'Netherlands'] <- 'NLD'
+crisis3$ISO[crisis3$country == 'Hungary'] <- 'HUN'
+crisis3$ISO[crisis3$country == 'Honduras'] <- 'HND'
+crisis3$ISO[crisis3$country == 'Venezuela'] <- 'VEN'
+crisis3$ISO[crisis3$country == 'Uruguay'] <- 'URY'
+crisis3$ISO[crisis3$country == 'Portugal'] <- 'PRT'
+crisis3$ISO[crisis3$country == 'Malaysia'] <- 'MYS'
+crisis3$ISO[crisis3$country == 'Taiwan'] <- 'TWN'
+crisis3$ISO[crisis3$country == 'Romania'] <- 'ROU'
+crisis3$ISO[crisis3$country == 'Korea'] <- 'KOR'
+crisis3$ISO[crisis3$country == 'New Zealand'] <- 'NZL'
+crisis3$ISO[crisis3$country == 'Zambia'] <- 'ZMB'
+crisis3$ISO[crisis3$country == 'Chile'] <- 'CHL'
+crisis3$ISO[crisis3$country == 'Dominican Republic'] <- 'DOM'
+crisis3$ISO[crisis3$country == 'Myanmar'] <- 'MMR'
+crisis3$ISO[crisis3$country == 'Panama'] <- 'PAN'
+crisis3$ISO[crisis3$country == 'Central African Republic'] <- 'CAF'
+crisis3$ISO[crisis3$country == 'Argentina'] <- 'ARG'
+crisis3$ISO[crisis3$country == 'Greece'] <- 'GRC'
+crisis3$ISO[crisis3$country == 'Guatemala'] <- 'GTM'
+crisis3$ISO[crisis3$country == 'Bolivia'] <- 'BOL'
+```
+
+I create the variable *countryyear*, which looks at each row and joins the country's abbreviation (ISO) with the year of the disaster. This variable is important because the unit of analysis for the quantitative models is each unique year in each specific country.
+
+```{r}
+crisis3$countryyear <- paste(crisis3$country, crisis3$year, sep = " ") #create country-year variable
+```
+
+And, importantly, clean my environment to prevent confusion:
+
+```{r}
+rm(list=(ls()[ls()!="crisis3" & ls()!="emdat" & ls()!="econ2" & ls()!="natdis2" & ls()!="emdat3"]))
+```
+
+## Attack and fatality data: ansa
+
+Having handled the crisis-related datasets, it's time to look at *ansa*.
+
+As above, I read in the dataset, set labels (for the codebook), and modify the *country* names to match the format and spelling in other datasets:
+
+```{r}
+ansa <- read.csv("UCDP GED.csv") #read in dataset
+
+#set labels for codebook
+set_label(ansa$active_year) <- "1: if the event belongs to an active conflict/dyad/actor-year; 0: otherwise."
+set_label(ansa$type_of_violence) <- "Type of UCDP conflict:
+1: state-based conflict
+2: non-state conflict
+3: one-sided violence"
+names(ansa)[names(ansa) == "best"] <- "fatalities" #rename variable
+names(ansa)[names(ansa) == "id"] <- "attack_id" #rename variable
+set_label(ansa$fatalities) <- "The best (most likely) estimate of total fatalities resulting from
+an event.
+It is always the sum of deaths_a, deaths_b, deaths_civilians and
+deaths_unknown"
+
+#rename countries to match other datasets
+ansa$country <- trimws(ansa$country, which = c("both"))
+ansa$country[ansa$country == 'Ivory Coast'] <- "Cote D'Ivoire"
+ansa$country[ansa$country == 'Congo'] <- "Congo (Brazzaville)"
+ansa$country[ansa$country == 'Cambodia (Kampuchea)'] <- "Cambodia"
+ansa$country[ansa$country == 'Bosnia-Herzegovina'] <- "Bosnia and Herzegovina"
+ansa$country[ansa$country == 'DR Congo (Zaire)'] <- "Democratic Republic of Congo"
+ansa$country[ansa$country == 'Kingdom of eSwatini (Swaziland)'] <- "eSwatini"
+ansa$country[ansa$country == 'Macedonia, FYR'] <- "Macedonia"
+ansa$country[ansa$country == 'Madagascar (Malagasy)'] <- "Madagascar"
+ansa$country[ansa$country == 'Myanmar (Burma)'] <- "Myanmar"
+ansa$country[ansa$country == 'Russia (Soviet Union)'] <- "Russia"
+ansa$country[ansa$country == 'Serbia (Yugoslavia)'] <- "Serbia"
+ansa$country[ansa$country == 'Yemen (North Yemen)'] <- "Yemen"
+ansa$country[ansa$country == 'Zimbabwe (Rhodesia)'] <- "Zimbabwe"
+```
+
+Because *ansa* includes cases of state-sponsored attacks, which fall outside of this research project's scope, I remove any cases of violence perpetrated by government actors and then drop the variables that I won't need for my analysis (to keep things as neat and lean as possible):
+
+```{r}
+ansa2 <- ansa[!(ansa$type_of_violence == 3 & str_detect(ansa$side_a, "Government")), ] #remove cases where type_of_violence == 3 AND side_a includes "Government" to exclude cases of state-sanctioned violence
+
+#drop unnecessary variables
+drop <- c("relid", "code_status", "number_of_sources", "source_article", "source_office", "source_date", "source_headline", "source_original", "conflict_dset_id", "dyad_dset_id", "side_a_dset_id", "side_b_dset_id")
+ansa3 <- ansa2[,!(names(ansa2) %in% drop)]
+
+#reorder variables in ansa3 to keep the most relevant first
+ansa3 <- ansa3 %>%
+  dplyr::select(attack_id, year, country, region, dyad_name, fatalities, deaths_civilians, side_a, side_b, dplyr::everything())
+```
+
+Then, I make a country-year variable, and save this dataset as an Rds file to expedite working with this data in the future:
+
+```{r}
+ansa3$countryyear <- paste(ansa3$country, ansa3$year, sep = " ")
+#saveRDS(ansa3, "ansa3.rds") #left join later onto final dataset by "attack_id"
+```
+
+## Territory and population metrics: territory and pop
+
+To standardize the data by country size and population, I need to load in control variables with information on each country's area and population, by year.
+
+After reading in the Excel files that I downloaded from the World Bank Data Bank, I ensure that all the necessary variables are stored in the right data type. These tables are also in a wide format, so I pivot them to be in a long format.
+
+```{r}
+#territory dataset
+territory <- read_xlsx("wdi_sqkm.xlsx") #read in dataset
+territory[3:33] <- sapply(territory[3:33], as.numeric) #store data as numeric for columns 3:33
+territory2 <-  pivot_longer(territory, cols = 3:33, names_to = "year", values_to = "sqkm") #pivot data to long format
+
+pop <- read_xlsx("wdi_pop.xlsx")
+pop[3:33] <- sapply(pop[3:33], as.numeric)
+pop2 <-  pivot_longer(data = pop, cols = 3:33, names_to = "year", values_to = "population")
+```
+
+Then, I merge *territory2* and *pop2* to have a singular dataframe with population and territory size information for each country, by year, and I rename variables and country names as needed:
+
+```{r}
+
+controls <- left_join(pop2, territory2, by=c("year", "Country Name", "Country Code")) #join by matching variables
+
+#rename variables
+names(controls)[names(controls) == "Country Name"] <- "country"
+names(controls)[names(controls) == "Country Code"] <- "ISO"
+
+#rename countries to match other datasets
+controls$country[controls$country == 'Congo, Dem. Rep.'] <- "Democratic Republic of Congo"
+controls$country[controls$country == 'Congo, Rep.'] <- "Congo (Brazzaville)"
+controls$country[controls$country == 'Egypt, Arab Rep.'] <- "Egypt"
+controls$country[controls$country == 'Iran, Islamic Rep.'] <- "Iran"
+controls$country[controls$country == 'Kyrgyz Republic'] <- "Kyrgyzstan"
+controls$country[controls$country == 'Lao PDR'] <- "Laos"
+controls$country[controls$country == 'Russian Federation'] <- "Russia"
+controls$country[controls$country == 'Syrian Arab Republic'] <- "Syria"
+controls$country[controls$country == 'United States'] <- "United States of America"
+controls$country[controls$country == 'Venezuela, RB'] <- "Venezuela"
+controls$country[controls$country == 'North Macedonia'] <- "Macedonia"
+
+controls$year <- as.numeric(controls$year) #make sure that year is stored as the right data type
+```
+
+## Creating the final datasets
+
+Now that I have my crisis information, my control variables, and my ANSA information, I can join these individual datasets into a master dataframe that I will later analyze.
+
+A left-join will mean that *crisis3* observations will be appended to *ansa3* where their *countryyear*, *year*, and *country* variables match, retaining all of *ansa3*'s observations.
+
+```{r}
+thesis0 <- left_join(ansa3, crisis3, by=c("countryyear", "year", "country")) #left join based on the listed variables
+thesis0$year <- as.numeric(thesis0$year) #store year data as numeric
+thesis <-  left_join(thesis0, controls, by=c("country", "year", "ISO")) #add in control variables where country, year, ISO match
+```
+
+Now, some more variable creation and manipulation.
+
+First, I create a perpetrator variable based on *ansa*'s *side_a* and *side_b* variables. If *side_a* includes the word "Government," then I assume that *side_b* is the perpetrator. If not, then I assume *side_a* is the perpetrator:
+
+```{r}
+thesis$perpetrator <- ifelse(str_detect(thesis$side_a, "Government"), as.character(thesis$side_b), as.character(thesis$side_a)) #ensure that the government is excluded as a perpetrator
+```
+
+Next, I calculate the number of deaths on the perpetrator and non-perpetrator sides. If the perpetrator was *side_b*, then I accept the death toll from *deaths_b* as the value; if not, I take that of *deaths_a*, and vice versa for non-perpetrator deaths:
+
+```{r}
+thesis <- thesis %>% 
+  mutate(perpdeaths = ifelse(perpetrator == side_b, deaths_b, deaths_a), nonperpdeaths = ifelse(perpetrator == side_b, deaths_a, deaths_b))
+```
+
+I then create a country-year variable, a country-year-group variable, an overall crisis count variable, a crisis binary (yes/no) variable, and transform variables as necessary (recall the frequency charts printed above):
+
+```{r}
+thesis$ISOyear <- paste((thesis$ISO), (thesis$year), sep=" ") #create country-year variable
+thesis$cyg <- paste((thesis$country), (thesis$year), (thesis$perpetrator)) #create a country-year-group variable to distinguish different ANSAs operating in the same country in the same year
+thesis$logpop <- log(thesis$population) #log transform the population variable
+
+thesis["count"] <- thesis$natural + thesis$econcrisis #add crisis tally
+
+thesis["binary"] <- NA #add crisis binary column
+thesis <- within(thesis, binary[natural == 0 & econcrisis == 0] <- '0') #define binary 0 as any cases where there are no natural or economic crises
+thesis <- within(thesis, binary[natural >= 1 | econcrisis >= 1] <- '1') #define binary 1 as any case where there was either a natural disaster or an economic crisis
+
+#keep clean and tidy
+thesis <- thesis %>%
+  dplyr::select(ISOyear, country, year, econcrisis, natural, count, binary, dyad_name, side_a, side_b, fatalities, dplyr::everything()) #reorder variables as preferred
+thesis$gwnob[is.na(thesis$gwnob)] <- "ANSA" #rename variable as ANSA
+thesis <- na.omit(thesis) #remove NAs!
+
+#save as proper data types
+thesis$date_start <- as.Date(thesis$date_start) #store end date as date data type
+thesis$date_end <- as.Date(thesis$date_end) #store end date as date data type
+thesis$year <- as.numeric(thesis$year) #store year as numeric data type
+
+#drop unecessary variables
+thesisdrop <- c("conflict_dset_id", "relid", "code_status", "dyad_dset_id", "side_a_dset_id", "side_b_dset_id", "source_date", "source_office", "source_headline", "number_of_sources", "source_article", "source_original", "country_id")
+thesis = thesis[,!(names(thesis) %in% thesisdrop)]
+```
+
+Now that things are neat, I add codebook labels as necessary, and then I save my codebook:
+
+```{r}
+set_label(thesis$ISOyear) <- "ISO-year combination"
+set_label(thesis$countryyear) <- "Country-year combination"
+set_label(thesis$country) <- "Country in which the event occurred"
+set_label(thesis$year) <- "Year in which the event occurred"
+set_label(thesis$econcrisis) <- "Tally of economic crises present in the associated country-year"
+set_label(thesis$natural) <- "Tally of natural, technological, and biological disasters occurring in the associated country-year"
+set_label(thesis$count) <- "Tally of all crises occurring in a given country-year (sum of econcrisis and natural)"
+set_label(thesis$binary) <- "Dummy variable where 0 means no crisis occurred and 1 means at least one crisis occurred in that country-year"
+set_label(thesis$dyad_name) <- "Name of the conflict dyad creating the event. A dyad is the pair of two actors engaged in violence (in the case of one-sided violence, the perpetrator of violence and
+civilians). The two sides are separated by an ASCII dash (e.g. Government of Russia - Caucasus Emirate, Taleban - civilians)."
+set_label(thesis$side_a) <- "The name of Side A in the dyad. In state-based conflicts always a government. In one-sided violence always the perpetrating party."
+set_label(thesis$side_b) <- "The name of Side B in the dyad. In state-based always the rebel movement or rivalling government. In one-sided violence always “civilians”."
+set_label(thesis$fatalities) <- "The best (most likely) estimate of total fatalities resulting from
+an event. It is always the sum of deaths_a, deaths_b, deaths_civilians and deaths_unknown."
+set_label(thesis$region) <- "Region where the event took place. One of following: {Africa, Americas, Asia, Europe, Middle East}."
+set_label(thesis$id) <- "Unique identification number for each event"
+set_label(thesis$active_year) <- "1: if the event belongs to an active conflict/dyad/actor-year 0: otherwise."
+set_label(thesis$type_of_violence) <- "Type of UCDP conflict:
+1: state-based conflict
+2: non-state conflict
+3: one-sided violence."
+set_label(thesis$conflict_new_id) <- "A unique conflict identification code for each individual conflict in the dataset. UCDP Conflict ID for state based, non-state conflicts and onesided violence as per the UCDP/PRIO Armed Conflict Dataset and UCDP Non-State Dataset and UCDP One-Sided dataset version 20.1. Fully compatible with UCDP/PRIO Armed Conflict Dataset, UCDP Non-State Dataset and UCDP One-Sided Violence Dataset versions 17.1 and later. This identifier is unique across the dataset (i.e. a non-state conflict cannot have the same identifier as a state-based conflict or a one-sided instance), irrespective of type of violence, and may be used for filtering and aggregation. Warning: Not compatible with pre-17.1 versions of any UCDP datasets"
+set_label(thesis$conflict_name) <- "Name of the UCDP conflict to which the event belongs. For
+non-state conflicts and one-sided violence this is the same as
+the dyad name"
+set_label(thesis$dyad_new_id) <- "A unique conflict identification code for each individual dyad in
+the dataset. UCDP Dyad ID for state based conflicts, non-state conflicts and one-sided incidences as per the UCDP/PRIO Armed Conflict Dataset, UCDP Non-State Dataset and UCDP OneSided Violence Datasets versions 20.1. Fully compatible with UCDP/PRIO Armed Conflict Dataset,
+UCDP Non-State Dataset and UCDP One-Sided Violence Dataset versions 17.1 and later. This identifier is unique across the dataset (i.e. a non-state conflict cannot have the same identifier as a state-based conflict or a one-sided instance), irrespective of type of violence, and may be used for filtering and aggregation. Warning: Not compatible with pre-17.1 versions of any UCDP datasets"
+set_label(thesis$side_a_new_id) <- "Unique Side A identification number"
+set_label(thesis$side_b_new_id) <- "Unique Side B identification number"
+set_label(thesis$where_prec) <- "The precision with which the coordinates and location assigned to the event reflects the location of the actual event.
+1: exact location of the event known and coded.
+2: event occurred within at maximum a ca. 25 km radius
+around a known point. The coded point is the known point.
+3: only the second order administrative division where an
+event happened is known. That administrative division is coded
+with a point representing it (typically the centroid).
+4: only the first order administrative division where an event
+happened is known. That administrative division is coded with
+a point representing it (typically the centroid).
+5: the only spatial reference for the event is neither a known
+point nor a known formal administrative division, but rather a
+linear feature (e.g. a long river, a border, a longer road or the
+line connecting two locations further afield than 25 km) or a
+fuzzy polygon without defined borders (informal regions, large
+radiuses etc.). A representation point is chosen for the feature
+and employed.
+6: only the country where the event took place in is known.
+7: event in international waters or airspace."
+set_label(thesis$where_coordinates) <- "Name of the location to which the event is assigned. Fully
+standardized and normalized."
+set_label(thesis$where_description) <- "Comment on the location coded, sometimes left empty can include area of the capital or name of a village that has not been found."
+set_label(thesis$adm_1) <- "Name of the first order (largest) administrative division where
+the event took place."
+set_label(thesis$adm_2) <- "Name of the second order (second largest) administrative division where
+the event took place."
+set_label(thesis$latitude) <- "Latitude (in decimal degrees)"
+set_label(thesis$longitude) <- "Longitude (in decimal degrees)"
+set_label(thesis$geom_wkt) <- "An Open Geospatial Consortium textual representation of the
+location of each individual point. Formatted as OGC WKT
+(well known text) without SRID."
+set_label(thesis$priogrid_gid) <- "The PRIO-grid cell id (gid) in which the event took place.
+Compatibility with PRIO-grid (Tollefsen, 2012) is guaranteed
+for both PRIO-grid 1 and 2."
+set_label(thesis$event_clarity) <- "1 (high) for events where the reporting allows the coder to
+identify the event in full. 2 (lower) for events where an aggregation of information was
+already made by the source material that is impossible to undo
+in the coding process."
+set_label(thesis$date_prec) <- "How precise the information is about the date of an event.
+1: exact date of event is known;
+2: the date of the event is known only within a 2-6 day range.
+3: only the week of the event is known
+4: the date of the event is known only within an 8-30 day range
+or only the month when the event has taken place is known
+5: the date of the event is known only within a range longer
+than one month but not more than one calendar year."
+set_label(thesis$date_start) <- "The earliest possible date when the event has taken place. "
+set_label(thesis$date_end) <- "The last possible date when the event has taken place."
+set_label(thesis$deaths_a) <- "The best estimate of deaths sustained by side a. Always 0 for one-sided violence events."
+set_label(thesis$deaths_b) <- "The best estimate of deaths sustained by side b. Always 0 for one-sided violence events."
+set_label(thesis$deaths_civilians) <- "The best estimate of dead civilians in the event. For non-state or state-based events, this is the number of collateral damage resulting in fighting between side a and side b. For one-sided violence, it is the number of civilians killed by side a."
+set_label(thesis$deaths_unknown) <- "The best estimate of deaths of persons of unknown status."
+set_label(thesis$high) <- "The highest reliable estimate of total fatalities."
+set_label(thesis$low) <- "The lowest reliable estimate of total fatalities."
+set_label(thesis$gwnoa) <- "The Gleditsch and Ward number for Side A if the side is a state. Empty if Side A is not a state."
+set_label(thesis$gwnob) <- "The Gleditsch and Ward number for Side A if the side is a state. Empty if Side B is not a state."
+set_label(thesis$population) <- "Population total for a given country-year."
+set_label(thesis$logpop) <- "Logged population total for a given country-year."
+set_label(thesis$sqkm) <- "A country's total territory size in square kilometers in a given country-year."
+set_label(thesis$cyg) <- "The country-year-group."
+
+#save the codebook
+codebook <- codebook_table(thesis)
+saveRDS(codebook, "CrisisANSACodebook.rds")
+saveRDS(thesis, "CrisisANSAData.rds")
+```
+
+Now, I set the dataframe in terms of the desired unit of analysis: fatalities at the country-year-group (CYG) level. I group by pertinent variables and then create new variables to calculate the sum of total and itemized fatalities within each CYG.
+
+```{r}
+thesisCYG <- thesis %>% 
+  group_by(cyg, ISOyear, country, region, year, countryyear, econcrisis, count, binary, natural, side_a, side_b, active_year, type_of_violence, perpetrator, population, logpop, sqkm) %>% 
+  summarize(cyg_fatalities = sum(fatalities), cyg_civ = sum(deaths_civilians), perpdeaths = sum(perpdeaths), nonperpdeaths = sum(nonperpdeaths), deaths_unknown = sum(deaths_unknown), deaths_a = sum(deaths_a), deaths_b = sum(deaths_b))
+```
+
+With that, some of the variables will need to be standardized by population size for adequate statistical analysis. The following logged variables will constitute some of my dependent variables:
+
+```{r}
+thesisCYG$fat_pop <- (thesisCYG$cyg_fatalities/thesisCYG$population)*100 #create DV: fatalities per 100,000 population
+thesisCYG$civcas_pop <- (thesisCYG$cyg_civ/thesisCYG$population)*100 #create DV: civilian casualties per 100,000 population
+```
+
+Because I am also interested in the lagged effects of crises on ANSA attacks and related fatalities, I also create lagged versions of these variables. The idea is to shift the crisis information back in time for *crisiscount*, *binary*, *econcrisis*, and *natural* by 1-5 years for each country year.
+
+```{r}
+thesisCYG <- thesisCYG %>% 
+  group_by(cyg) %>% 
+  mutate(fatalities_lag = (fat_pop - lag(fat_pop, default = NA)), civcas_lag = (civcas_pop - lag(civcas_pop, default = NA)))
+thesisCYG <- thesisCYG %>% 
+  group_by(cyg) %>% 
+  fill(fatalities_lag, .direction="up") %>% ##2660 NAs for fatalities_lag
+  fill(civcas_lag, .direction="up")
+```
+
+And, to keep things clear, I add labels for the new variables:
+
+```{r}
+set_label(thesisCYG$cyg_fatalities) <- "Number of fatalities caused by a group in a given country-year."
+set_label(thesisCYG$cyg_civ) <- "Number of civilian casualties caused by a group in a given country-year."
+set_label(thesisCYG$perpdeaths) <- "Number of deaths among the perpetrator's ranks."
+set_label(thesisCYG$nonperpdeaths) <- "Number of deaths among the non-perpetrating party's ranks."
+set_label(thesisCYG$fat_pop) <- "Fatalities caused by a given group per 100,000 inhabitants in a given country year."
+set_label(thesisCYG$civcas_pop) <- "Civilian casualties caused by a given group per 100,000 inhabitants in a given country year."
+```
+
+Because I am also interested in the country-year (not just CYG) level of analysis, I need to repeat the above without grouping by ANSA:
+
+```{r}
+#set dataframe in terms of desired unit of analysis: fatalities at the country-year level
+thesisCY <- thesis %>% 
+  group_by(ISOyear, country, region, countryyear, year, econcrisis, count, binary, natural, side_a, side_b, active_year, type_of_violence, perpetrator, population, logpop, sqkm) %>% 
+  summarize(cy_fatalities = sum(fatalities), cy_civ = sum(deaths_civilians), perpdeaths = sum(perpdeaths), nonperpdeaths = sum(nonperpdeaths), deaths_unknown = sum(deaths_unknown))
+
+#create the standardized dependent variables
+thesisCY$fat_pop <- (thesisCY$cy_fatalities/thesisCY$population)*100 #create DV: fatalities per 100,000 population
+thesisCY$civcas_pop <- (thesisCY$cy_civ/thesisCYG$population)*100 #create DV: civilian casualties per 100,000 population
+
+#make lagged variables
+thesisCY <- thesisCY %>% 
+  group_by(countryyear) %>% 
+  mutate(fatalities_lag = (fat_pop - dplyr::lag(fat_pop, default = NA)), civcas_lag = (civcas_pop - lag(civcas_pop, default = NA)))
+thesisCY <- thesisCY %>% 
+  group_by(countryyear) %>% 
+  fill(fatalities_lag, .direction="up") %>%
+  fill(civcas_lag, .direction="up")
+
+#create more labels for codebook
+set_label(thesisCY$cy_fatalities) <- "Number of fatalities caused by a group in a given country-year."
+set_label(thesisCY$cy_civ) <- "Number of civilian casualties caused by a group in a given country-year."
+set_label(thesisCY$perpdeaths) <- "Number of deaths among the perpetrator's ranks."
+set_label(thesisCY$nonperpdeaths) <- "Number of deaths among the non-perpetrating party's ranks."
+set_label(thesisCY$fat_pop) <- "Fatalities caused by a given group per 100,000 inhabitants in a given country year."
+set_label(thesisCY$civcas_pop) <- "Civilian casualties caused by a given group per 100,000 inhabitants in a given country year."
+```
+
+And finally, I save my work so that I can pick up right where I left off, and I clean my environment to prevent confusion:
+
+```{r}
+saveRDS(thesis, "thesis.rds")
+saveRDS(thesisCY, "thesisCY.rds")
+saveRDS(thesisCYG, "thesisCYG.rds") #use CYG for MLR models to control for changes at group level
+
+rm(list=(ls()[ls()!="thesis" & ls()!="codebook" & ls()!="ansa3" & ls()!="emdat3" & ls()!="emdat" & ls()!="ansa3" & ls()!="thesisCY" & ls()!="thesisCYG" & ls()!="region"]))
+```
