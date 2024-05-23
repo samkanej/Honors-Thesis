@@ -6,7 +6,7 @@ The files in this repo include the following:
 
 * 4 Rmd files, titled in order, that walk through the R code that supported each phase of the project;
 * A zip file containing the original datasets that I used to create a bespoke dataframe for the purposes of my analysis;
-* Most of those bespoke dataframes - excluding, unfortunately, the files I created for, input to, and derived from my spatial analysis process, as these have been too large to upload and I am still developing my Git LFS skills; and
+* A zip file containing most of those wrangled and cleaned datasets, including spatial analysis input CSV files as well as the intermediary files for the 100 and 1,000 kilometer thresholds (note that not all of the data used for the spatial analysis component was uploaded owing to file size limitations - hopefully the 100-kilometer files suffice to demo the code); and
 * A sample and the complete copy of the final product that these datasets and models supported - my undergraduate honors thesis.
 
 ## Background
